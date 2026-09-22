@@ -41,10 +41,15 @@ def _read_candles(sym, start, end, data_dir):
         return None
     df = pd.read_csv(f, parse_dates=["timestamp"])
     df = df.set_index("timestamp").sort_index()
+    # filter by local (IST) calendar date — avoids tz + numpy-timedelta arithmetic
+    # (the +1-day form warns under pandas 3.0 / numpy 2.x). Date compare is inclusive
+    # of the whole start and end days.
+    idx_dates = df.index.date
     if start:
-        df = df[df.index >= pd.Timestamp(start, tz=df.index.tz)]
+        df = df[idx_dates >= pd.Timestamp(start).date()]
+        idx_dates = df.index.date
     if end:
-        df = df[df.index <= pd.Timestamp(end, tz=df.index.tz) + pd.Timedelta(days=1)]
+        df = df[idx_dates <= pd.Timestamp(end).date()]
     return df[["open", "high", "low", "close", "volume"]]
 
 
