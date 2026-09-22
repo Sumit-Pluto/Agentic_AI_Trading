@@ -1,0 +1,19 @@
+# Install with: pip install -r requirements.txt
+requests>=2.31
+urllib3<2                 # macOS system python ships LibreSSL; urllib3 v2 warns on it
+websocket-client>=1.6     # imports as "websocket" — do NOT pip install "websocket"
+pyotp>=2.9
+python-dotenv>=1.0
+selenium>=4.6             # only for shoonya_login (headless daily login on the VPS)
+pysocks>=1.7              # SOCKS proxy support for REST (SHOONYA_PROXY / tunnel.sh)
+python-socks>=2.4         # SOCKS proxy support for the websocket
+pandas>=2.0               # candles / indicators
+numpy>=1.24
+scikit-learn>=1.3         # quant.pipeline meta-model: isotonic calibration + AUC/Brier metrics
+lightgbm>=4.0             # quant.pipeline meta-model (needs libomp — `brew install libomp` on macOS)
+fastapi>=0.110            # scanner web UI
+uvicorn[standard]>=0.29
+pypdf>=4.0               # reads research PDFs (strategist source docs)
+feedparser>=6.0           # RSS aggregation (news module)
+pybind11>=2.12            # build dep for the C++ compute kernel (qcore, Phase 2)
+openai>=1.30              # client SDK for the LLM assistant (RunPod Qwen3.5-9B, OpenAI-compatible)

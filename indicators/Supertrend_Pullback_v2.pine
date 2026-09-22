@@ -1,0 +1,326 @@
+//@version=6
+indicator(
+     title            = "Supertrend Pullback Signals v2 [Filtered]",
+     shorttitle       = "ST Pullback v2",
+     overlay          = true,
+     max_labels_count = 500,
+     max_lines_count  = 100
+     )
+
+// ============================================================================
+// ─── INPUTS ─────────────────────────────────────────────────────────────────
+// ============================================================================
+
+grp_st = "⚙️  Supertrend"
+i_atr_len = input.int  (10,  "ATR Length",        minval=1,             group=grp_st)
+i_factor  = input.float(3.0, "Supertrend Factor", minval=0.1, step=0.1, group=grp_st)
+
+grp_pqf = "🎯  Pullback Quality Filter (PQF)"
+i_pqf_min   = input.float(0.3, "Min Pullback Depth (× ATR)", minval=0.05, step=0.05,
+     tooltip="TRUE retracement depth (leg extreme to deepest wick) in ATR units. Shallower pullbacks are skipped as noise.",
+     group=grp_pqf)
+i_pqf_max   = input.float(3.2, "Max Pullback Depth (× ATR)", minval=0.1, step=0.05,
+     tooltip="Deeper retracements are skipped — likely a reversal, not a pullback. Measured to the deepest wick. NOTE (2026-07-05 geometry fix): with factor 3 the ST line rides ~3 ATR below price, so a value-zone touch needs a ~2-3 ATR dip — the old 2.2 cap made signals impossible. Anything deeper than ~3.5 ATR flips the Supertrend anyway.",
+     group=grp_pqf)
+i_max_entry = input.float(1.5, "Max Entry Distance from ST (× ATR)", minval=0.3, step=0.1,
+     tooltip="The signal candle must CLOSE within this distance of the Supertrend line. Blocks late, chasing entries where the stop (ST line) is too far away for a sane risk:reward.",
+     group=grp_pqf)
+
+grp_dvz = "📐  Dynamic Value Zone (DVZ)"
+i_dvz_width   = input.float(1.0, "Zone Half-Width (× ATR)", minval=0.1, step=0.05, group=grp_dvz)  // 2026-07-05: was 0.5 — unreachable with factor-3 ST geometry, see PQF tooltip
+i_touch_valid = input.int  (3,   "Zone Touch Validity (bars)", minval=1, maxval=10,
+     tooltip="A confirmation candle within this many bars of the zone touch fires the signal. Allows the natural 2-bar pattern: red candle dips into the zone, next green candle confirms.",
+     group=grp_dvz)
+i_dvz_show    = input.bool (true, "Show Value Zone", group=grp_dvz)
+
+grp_flt = "🧹  Regime Filters"
+i_adx_on   = input.bool (true, "ADX Chop Filter", inline="adx", group=grp_flt)
+i_adx_min  = input.float(20,   "min", minval=5, maxval=50, step=1, inline="adx",
+     tooltip="Skip all signals while ADX is below this level. Supertrend whipsaws violently in ranging markets — this is its single biggest failure mode.",
+     group=grp_flt)
+i_adx_len  = input.int  (14,   "ADX Length", minval=2, group=grp_flt)
+i_chop_bg  = input.bool (true, "Shade Chop Zones (ADX below min)", group=grp_flt)
+i_htf_on   = input.bool (false, "Higher-TF Supertrend Alignment", inline="htf", group=grp_flt)
+i_htf_tf   = input.timeframe("60", "", inline="htf",
+     tooltip="Longs only while the higher-timeframe Supertrend is bullish (shorts mirrored). Uses the last CLOSED HTF bar — non-repainting. Must be HIGHER than the chart timeframe.",
+     group=grp_flt)
+i_vol_on   = input.bool (false, "Volume Confirmation", inline="vol", group=grp_flt)
+i_vol_mult = input.float(1.0,  "× 20-bar avg", minval=0.5, step=0.1, inline="vol",
+     tooltip="Trigger candle volume must exceed this multiple of its 20-bar SMA. Leave OFF for instruments without volume (e.g. spot indices).",
+     group=grp_flt)
+
+grp_sig = "📶  Signal Rules"
+i_min_flip_bars = input.int (2, "Min Bars After Trend Flip",   minval=0,             group=grp_sig)
+i_max_per_leg   = input.int (2, "Max Signals per Trend Leg",   minval=1, maxval=10,  group=grp_sig)
+i_cooldown      = input.int (5, "Cooldown Between Signals (bars)", minval=0,         group=grp_sig)
+i_strong_on     = input.bool(true, "Require Strong Close", inline="sc", group=grp_sig)
+i_close_pos     = input.float(0.6, "", minval=0.5, maxval=1.0, step=0.05, inline="sc",
+     tooltip="Trigger candle must close within the top fraction of its range (bull) / bottom fraction (bear). 0.6 = close in the top 40% of the candle. Rejects weak, rejected closes that v1 accepted.",
+     group=grp_sig)
+
+grp_vis = "🎨  Visual Appearance"
+i_show_st      = input.bool (true, "Show Supertrend Line", group=grp_vis)
+i_show_signals = input.bool (true, "Show Entry Signals",   group=grp_vis)
+i_bull_col     = input.color(color.new(#26A69A, 0), "Bullish Color", group=grp_vis)
+i_bear_col     = input.color(color.new(#EF5350, 0), "Bearish Color", group=grp_vis)
+
+grp_alr = "🔔  Alerts"
+i_alr_bull = input.bool(true, "Alert: Bullish Pullback Signal", group=grp_alr)
+i_alr_bear = input.bool(true, "Alert: Bearish Pullback Signal", group=grp_alr)
+i_alr_flip = input.bool(true, "Alert: Trend Flips",             group=grp_alr)
+
+// ============================================================================
+// ─── COLORS ─────────────────────────────────────────────────────────────────
+// ============================================================================
+C_BULL        = i_bull_col
+C_BEAR        = i_bear_col
+C_BULL_ZONE   = color.new(i_bull_col, 88)
+C_BEAR_ZONE   = color.new(i_bear_col, 88)
+C_BULL_LINE   = color.new(i_bull_col, 30)
+C_BEAR_LINE   = color.new(i_bear_col, 30)
+C_CHOP        = color.new(#787B86, 92)
+C_TRANSPARENT = color.new(#000000, 100)
+
+// ============================================================================
+// ─── SUPERTREND & ATR ───────────────────────────────────────────────────────
+// ============================================================================
+[st_line, st_dir] = ta.supertrend(i_factor, i_atr_len)
+
+is_bull   = st_dir < 0
+is_bear   = st_dir > 0
+bull_flip = is_bull and not is_bull[1]
+bear_flip = is_bear and not is_bear[1]
+
+// ATR floored at mintick so depth ratios can never divide by zero / explode
+atr_raw = ta.atr(i_atr_len)
+atr_val = math.max(nz(atr_raw, syminfo.mintick), syminfo.mintick)
+
+// ============================================================================
+// ─── DYNAMIC VALUE ZONE ─────────────────────────────────────────────────────
+// ============================================================================
+dvz_upper = st_line + i_dvz_width * atr_val
+dvz_lower = st_line - i_dvz_width * atr_val
+
+// ============================================================================
+// ─── REGIME FILTERS ─────────────────────────────────────────────────────────
+// ============================================================================
+
+// ADX chop filter — Supertrend's dominant failure mode is the ranging market.
+[_dip, _dim, adx_val] = ta.dmi(i_adx_len, i_adx_len)
+adx_ok = not i_adx_on or adx_val >= i_adx_min
+
+// Higher-timeframe Supertrend direction, non-repainting:
+// the [1] offset + lookahead_on idiom returns the last CLOSED HTF bar's value
+// on both historical and realtime bars — no lookahead bias, no repaint.
+f_st_dir() =>
+    [_l, _d] = ta.supertrend(i_factor, i_atr_len)
+    _d
+htf_dir     = request.security(syminfo.tickerid, i_htf_tf, f_st_dir()[1], lookahead = barmerge.lookahead_on)
+htf_bull_ok = not i_htf_on or htf_dir < 0
+htf_bear_ok = not i_htf_on or htf_dir > 0
+
+// Volume confirmation on the trigger candle
+vol_sma = ta.sma(volume, 20)
+vol_ok  = not i_vol_on or (not na(volume) and volume >= vol_sma * i_vol_mult)
+
+// ============================================================================
+// ─── TREND LEG & PULLBACK STATE ─────────────────────────────────────────────
+// Tracks, per trend leg: the leg extreme, the deepest retracement since that
+// extreme (wick-based), whether the value zone was touched, and re-arm state.
+// ============================================================================
+var float leg_extreme        = na      // highest high (bull) / lowest low (bear) of the leg
+var float pull_extreme       = na      // deepest wick of the current retracement
+var int   bars_since_extreme = 0
+var bool  zone_touched       = false
+var int   zone_touch_bar     = 0
+var int   signals_this_leg   = 0
+var int   last_signal_bar    = -99999
+var int   bars_since_flip    = 0
+var bool  rearmed            = true    // a new signal requires a NEW leg extreme first
+
+bars_since_flip := (bull_flip or bear_flip) ? 0 : bars_since_flip + 1
+
+if bull_flip
+    leg_extreme        := high
+    pull_extreme       := na
+    bars_since_extreme := 0
+    zone_touched       := false
+    signals_this_leg   := 0
+    rearmed            := true
+else if bear_flip
+    leg_extreme        := low
+    pull_extreme       := na
+    bars_since_extreme := 0
+    zone_touched       := false
+    signals_this_leg   := 0
+    rearmed            := true
+else if is_bull
+    if na(leg_extreme) or high > leg_extreme
+        // Trend extension bar → new extreme, reset the pullback cycle.
+        // A bar that makes a new high AND dips deep is single-bar noise, not a pullback.
+        leg_extreme        := high
+        pull_extreme       := na
+        bars_since_extreme := 0
+        zone_touched       := false
+        rearmed            := true
+    else
+        // Pullback in progress → track the deepest wick and zone touches
+        bars_since_extreme += 1
+        pull_extreme       := na(pull_extreme) ? low : math.min(pull_extreme, low)
+        if low <= dvz_upper
+            zone_touched   := true
+            zone_touch_bar := bar_index
+else if is_bear
+    if na(leg_extreme) or low < leg_extreme
+        leg_extreme        := low
+        pull_extreme       := na
+        bars_since_extreme := 0
+        zone_touched       := false
+        rearmed            := true
+    else
+        bars_since_extreme += 1
+        pull_extreme       := na(pull_extreme) ? high : math.max(pull_extreme, high)
+        if high >= dvz_lower
+            zone_touched   := true
+            zone_touch_bar := bar_index
+
+// ============================================================================
+// ─── PULLBACK DEPTH (TRUE, WICK-BASED) ──────────────────────────────────────
+// v1 measured extreme→close on the trigger bar, which understates the real
+// retracement once price has bounced. This measures extreme→deepest wick.
+// ============================================================================
+float pullback_depth = na
+if is_bull and not na(pull_extreme)
+    pullback_depth := (leg_extreme - pull_extreme) / atr_val
+else if is_bear and not na(pull_extreme)
+    pullback_depth := (pull_extreme - leg_extreme) / atr_val
+
+pqf_valid   = not na(pullback_depth) and pullback_depth >= i_pqf_min and pullback_depth <= i_pqf_max
+touch_fresh = zone_touched and bar_index - zone_touch_bar <= i_touch_valid
+
+// ============================================================================
+// ─── MOMENTUM CONFIRMATION CANDLE ───────────────────────────────────────────
+// Directional body, closing beyond the prior close, and (optionally) closing
+// in the trend-side portion of its own range — rejects weak/rejected closes.
+// ============================================================================
+bar_range    = high - low
+pos_in_range = bar_range > 0 ? (close - low) / bar_range : 1.0
+
+bull_confirm = close > open and close > close[1] and (not i_strong_on or pos_in_range >= i_close_pos)
+bear_confirm = close < open and close < close[1] and (not i_strong_on or 1.0 - pos_in_range >= i_close_pos)
+
+// Entry proximity guard — the close must still be near value, not chasing
+bull_near = close <= st_line + i_max_entry * atr_val
+bear_near = close >= st_line - i_max_entry * atr_val
+
+// ============================================================================
+// ─── SIGNAL GENERATION ──────────────────────────────────────────────────────
+// barstate.isconfirmed → signals only finalize on bar close: no intrabar
+// flicker, labels never repaint, alerts match what backtesting shows.
+// ============================================================================
+common_ok = bars_since_flip >= i_min_flip_bars and
+     bars_since_extreme >= 1 and
+     touch_fresh and
+     pqf_valid and
+     adx_ok and
+     vol_ok and
+     rearmed and
+     signals_this_leg < i_max_per_leg and
+     bar_index - last_signal_bar >= i_cooldown and
+     barstate.isconfirmed
+
+bull_signal = common_ok and is_bull and bull_confirm and bull_near and close > st_line and htf_bull_ok
+bear_signal = common_ok and is_bear and bear_confirm and bear_near and close < st_line and htf_bear_ok
+
+if bull_signal or bear_signal
+    signals_this_leg += 1
+    last_signal_bar  := bar_index
+    zone_touched     := false
+    rearmed          := false   // re-arms only after a fresh leg extreme
+
+// ============================================================================
+// ─── PLOTS ──────────────────────────────────────────────────────────────────
+// ============================================================================
+st_color = is_bull ? C_BULL_LINE : C_BEAR_LINE
+
+plot(i_show_st ? st_line : na, title="Supertrend", color=st_color, linewidth=2, style=plot.style_line)
+
+dvz_up_plot  = plot(i_dvz_show ? dvz_upper : na, title="DVZ Upper", color=C_TRANSPARENT, display=display.none)
+dvz_low_plot = plot(i_dvz_show ? dvz_lower : na, title="DVZ Lower", color=C_TRANSPARENT, display=display.none)
+fill(dvz_up_plot, dvz_low_plot, color = is_bull ? C_BULL_ZONE : C_BEAR_ZONE, title="Dynamic Value Zone")
+
+// Chop shading — visualizes exactly where the ADX filter is blocking trades
+bgcolor(i_chop_bg and i_adx_on and adx_val < i_adx_min ? C_CHOP : na, title="Chop Zone (ADX below min)")
+
+// ============================================================================
+// ─── SIGNAL LABELS ──────────────────────────────────────────────────────────
+// ============================================================================
+if i_show_signals and bull_signal
+    label.new(
+         x         = bar_index,
+         y         = low - atr_val * 0.6,
+         text      = "BULL PB\n" + str.tostring(math.round(nz(pullback_depth, 0), 1)) + "× ATR",
+         style     = label.style_label_up,
+         color     = color.new(i_bull_col, 0),
+         textcolor = color.white,
+         size      = size.small,
+         tooltip   = "Stop ref: ST " + str.tostring(st_line, format.mintick) +
+                     " | ADX " + str.tostring(math.round(adx_val, 1)) +
+                     " | Signal " + str.tostring(signals_this_leg) + "/" + str.tostring(i_max_per_leg) + " this leg"
+         )
+
+if i_show_signals and bear_signal
+    label.new(
+         x         = bar_index,
+         y         = high + atr_val * 0.6,
+         text      = "BEAR PB\n" + str.tostring(math.round(nz(pullback_depth, 0), 1)) + "× ATR",
+         style     = label.style_label_down,
+         color     = color.new(i_bear_col, 0),
+         textcolor = color.white,
+         size      = size.small,
+         tooltip   = "Stop ref: ST " + str.tostring(st_line, format.mintick) +
+                     " | ADX " + str.tostring(math.round(adx_val, 1)) +
+                     " | Signal " + str.tostring(signals_this_leg) + "/" + str.tostring(i_max_per_leg) + " this leg"
+         )
+
+// ============================================================================
+// ─── BAR COLORING & FLIP MARKERS ────────────────────────────────────────────
+// ============================================================================
+barcolor(is_bull ? color.new(C_BULL, 80) : is_bear ? color.new(C_BEAR, 80) : na, title="Trend Bar Color")
+
+plotshape(bull_flip ? st_line : na, title="Bull Flip Dot", style=shape.circle, location=location.absolute, color=C_BULL, size=size.tiny)
+plotshape(bear_flip ? st_line : na, title="Bear Flip Dot", style=shape.circle, location=location.absolute, color=C_BEAR, size=size.tiny)
+
+// ============================================================================
+// ─── ALERTS ─────────────────────────────────────────────────────────────────
+// ============================================================================
+if i_alr_bull and bull_signal
+    alert("🟢 BULL Pullback | " + syminfo.tickerid +
+         " | TF " + timeframe.period +
+         " | depth " + str.tostring(math.round(pullback_depth, 2)) + "×ATR" +
+         " | ST " + str.tostring(st_line, format.mintick) +
+         " | ADX " + str.tostring(math.round(adx_val, 1)),
+         alert.freq_once_per_bar_close)
+
+if i_alr_bear and bear_signal
+    alert("🔴 BEAR Pullback | " + syminfo.tickerid +
+         " | TF " + timeframe.period +
+         " | depth " + str.tostring(math.round(pullback_depth, 2)) + "×ATR" +
+         " | ST " + str.tostring(st_line, format.mintick) +
+         " | ADX " + str.tostring(math.round(adx_val, 1)),
+         alert.freq_once_per_bar_close)
+
+if i_alr_flip and bull_flip
+    alert("🔄 Trend flip → BULLISH | " + syminfo.tickerid + " | TF " + timeframe.period, alert.freq_once_per_bar_close)
+
+if i_alr_flip and bear_flip
+    alert("🔄 Trend flip → BEARISH | " + syminfo.tickerid + " | TF " + timeframe.period, alert.freq_once_per_bar_close)
+
+// ============================================================================
+// ─── ALERT CONDITIONS (TradingView Alert Dialog) ────────────────────────────
+// ============================================================================
+alertcondition(bull_signal, "Bullish Pullback Signal", "🟢 Bullish Pullback on {{ticker}} ({{interval}}) | ST: {{plot_0}}")
+alertcondition(bear_signal, "Bearish Pullback Signal", "🔴 Bearish Pullback on {{ticker}} ({{interval}}) | ST: {{plot_0}}")
+alertcondition(bull_flip,   "Trend Flipped Bullish",   "🔄 Trend flipped BULLISH on {{ticker}} ({{interval}})")
+alertcondition(bear_flip,   "Trend Flipped Bearish",   "🔄 Trend flipped BEARISH on {{ticker}} ({{interval}})")
+

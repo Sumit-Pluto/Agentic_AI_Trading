@@ -1,0 +1,79 @@
+<mxfile host="app.diagrams.net" modified="2026-09-11T12:00:00.000Z" agent="architecture-research" version="24.0.0">
+  <diagram id="archB" name="B — End-to-End Open-Data Model">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="&lt;b&gt;ARCHITECTURE B — End-to-End Open-Data Model (no predefined rules)&lt;/b&gt;&lt;br&gt;&lt;i&gt;TFT-style multi-channel encoder · triple-barrier classification heads · abstention — the network learns its own &amp;quot;subagent weights&amp;quot; per timestep&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="277" y="20" width="1100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- INPUT CHANNELS -->
+        <mxCell id="inputs" value="&lt;b&gt;INPUT CHANNELS (per 5m bar, lookback window 100–200 bars)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="120" y="100" width="1000" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" value="&lt;b&gt;Price&lt;/b&gt;&lt;br&gt;log-returns or frac-diff (d≈0.4), H/L range" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="135" y="140" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="&lt;b&gt;Volume&lt;/b&gt;&lt;br&gt;rel-volume, VWAP deviation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="140" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="&lt;b&gt;Derivatives&lt;/b&gt;&lt;br&gt;futures OI, per-strike OI/IV/GEX (if available)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="465" y="140" width="160" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="&lt;b&gt;Regime&lt;/b&gt;&lt;br&gt;VIX level/Δ, index trend, breadth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="140" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="&lt;b&gt;Time&lt;/b&gt;&lt;br&gt;time-of-day, expiry distance, day-of-week" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="805" y="140" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" value="&lt;b&gt;Static&lt;/b&gt;&lt;br&gt;stock embedding, sector, liquidity tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="970" y="140" width="135" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- VSN -->
+        <mxCell id="vsn" value="&lt;b&gt;VARIABLE SELECTION NETWORK (TFT-style)&lt;/b&gt;&lt;br&gt;learned per-timestep weights over channels — this IS the end-to-end analog of subagent weights, and it is readable: inspect which channel the model trusted at each decision&lt;br&gt;+ RevIN / per-instrument normalization for non-stationarity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="320" y="290" width="600" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- TEMPORAL CORE -->
+        <mxCell id="core" value="&lt;b&gt;TEMPORAL CORE&lt;/b&gt;&lt;br&gt;LSTM sequence encoder (local pattern / short memory)&lt;br&gt;+ multi-head self-attention over the lookback (long-range analogs: &amp;quot;this OI-compression + vol-squeeze state appeared before — what followed?&amp;quot;)&lt;br&gt;+ gated residual connections (GRN) to keep it trainable on noisy data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="320" y="430" width="600" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- HEADS -->
+        <mxCell id="heads" value="&lt;b&gt;OUTPUT HEADS&lt;/b&gt;&lt;br&gt;① triple-barrier class probs P(+1 / 0 / −1) — trained with focal loss&lt;br&gt;② quantile head (return distribution, optional)&lt;br&gt;③ calibrated confidence → ABSTAIN below threshold (selective classification — the win-rate lever)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="320" y="580" width="600" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- POLICY / EXEC -->
+        <mxCell id="policy" value="&lt;b&gt;DECISION POLICY&lt;/b&gt;&lt;br&gt;signal iff P(+1) ≥ p* AND confidence ≥ c* · size ∝ prob, vol-targeted · symbolic hard vetoes still apply (gamma walls, event blackouts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="320" y="730" width="600" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="exec" value="&lt;b&gt;EXECUTION &amp;amp; EXITS&lt;/b&gt; — stop = lower barrier · target = upper barrier · EOD flat (identical geometry to the training labels)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="320" y="860" width="600" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- TRAINING COLUMN -->
+        <mxCell id="train" value="&lt;b&gt;TRAINING CURRICULUM (staged)&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;Stage 1 — self-supervised pre-train&lt;/b&gt;&lt;br&gt;masked-channel / masked-bar reconstruction across the FULL universe (the 713M-row minute dataset) — learns generic market dynamics without labels&lt;br&gt;&lt;br&gt;&lt;b&gt;Stage 2 — supervised fine-tune&lt;/b&gt;&lt;br&gt;triple-barrier labels · focal loss (rare setups) · sample-uniqueness weights · purged K-fold + embargo · early stopping on OOS&lt;br&gt;&lt;br&gt;&lt;b&gt;Stage 3 — per-stock adaptation&lt;/b&gt;&lt;br&gt;freeze backbone, fine-tune last layers + stock embedding per symbol (few-shot; MAML optional, simple fine-tune first)&lt;br&gt;&lt;br&gt;&lt;b&gt;Stage 4 — calibrate + gate&lt;/b&gt;&lt;br&gt;temperature-scale probs · pick p* on validation · ship only if beats baseline OOS (walk-forward)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="990" y="290" width="420" height="430" as="geometry" />
+        </mxCell>
+
+        <!-- RISKS BOX -->
+        <mxCell id="risks" value="&lt;b&gt;KNOWN FAILURE MODES (design against)&lt;/b&gt;&lt;br&gt;• overfits noise: intraday SNR is tiny — regularize hard, keep model small&lt;br&gt;• regime shift / catastrophic forgetting: rolling refits + drift monitor&lt;br&gt;• data hunger: needs the full-universe pretrain before per-stock heads&lt;br&gt;• opacity: keep VSN weights logged per trade for post-hoc attribution" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="760" width="420" height="170" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES -->
+        <mxCell id="ed1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="inputs" target="vsn"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="vsn" target="core"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="core" target="heads"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="heads" target="policy"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="policy" target="exec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed6" value="labels · folds · stages" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;fontSize=11;" edge="1" parent="1" source="train" target="core"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ed7" value="static covariates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.85;entryY=0;fontSize=11;dashed=1;" edge="1" parent="1" source="c6" target="vsn"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,32 @@
+# credentials & session state — never commit
+.env
+.session_token
+
+# daily scrip master downloads
+data/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# generated runtime state / caches (training samples, bhavcopy, oi/iv stores, api caches)
+state/
+
+# macOS
+.DS_Store
+
+# non-code artifacts — code repo only (no research papers, datasets, model weights, build binaries)
+*.pdf
+*.doc
+*.docx
+*.so
+*.pkl
+*.joblib
+backtest_result.json
+paper_trades.jsonl
+weights_3stocks.json

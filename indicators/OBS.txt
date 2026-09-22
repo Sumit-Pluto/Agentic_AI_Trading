@@ -1,0 +1,141 @@
+//@version=5
+indicator(title="Buy the dips - sell the tops", shorttitle="BTD-STT", format=format.price, precision=2, overlay=true)
+
+var lastRSI = "neutral"
+var upTrend = false
+var downTrend = false
+var label lbl = na
+os_candle = color.yellow
+
+//Inputs
+recolor_candles = input.bool(false, "Color candles based on overbougt/sold W%R")
+rsiLengthInput = input.int(14, minval=1, title="RSI Length", group="RSI Settings")
+rsiSourceInput = input.source(close, "Source", group="RSI Settings")
+rsiOS = input(30,"Oversold level", group="RSI Settings")
+rsiOB = input(70,"Overbought level", group="RSI Settings")
+length = input(24,"Period", group="Williams %R Settings")
+src = input(close, "Source", group="Williams %R Settings")
+showAllExtremes = input.bool(false,"Show all oversold/bought candles despite the trend")
+showMAs = input.bool(false,"Show Moving Averages",group="Moving Averages")
+EMA1period = input.int(20, minval=1, title="Short EMA 1",group="Moving Averages")
+EMA2period = input.int(40, minval=1, title="Short EMA 2",group="Moving Averages")
+shortPeriod = input.int(50, minval=1, title="Short SMA",group="Moving Averages")
+SMA2period = input.int(100, minval=1, title="Semi-Long SMA",group="Moving Averages")
+semilongPeriod = input.int(150, minval=1, title="Long SMA 1",group="Moving Averages")
+longPeriod = input.int(200, minval=1, title="Long SMA 2",group="Moving Averages")
+col = input.color(color.gray, "RSI/%R Label Background Color", group="Layout")
+txt_col = input.color(color.yellow, "RSI/%R Label Text Color", group="Layout")
+exit_txt_col = input.color(color.gray, "EXIT Text Color", group="Layout")
+
+//RSI calculation
+up = ta.rma(math.max(ta.change(rsiSourceInput), 0), rsiLengthInput)
+down = ta.rma(-math.min(ta.change(rsiSourceInput), 0), rsiLengthInput)
+rsi = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+bool oversold = false
+bool overbought = false
+
+if rsi < rsiOS
+    lastRSI := "Oversold"
+else if rsi > rsiOB
+    lastRSI := "Overbought"
+
+//WPR calculation
+_pr(length) =>
+	max = ta.highest(length)
+	min = ta.lowest(length)
+	100 * (src - max) / (max - min)
+percentR = _pr(length)
+
+//Main program
+bool WPRoversoldToNormal = false
+bool WPRoverboughtToNormal = false
+
+if lastRSI == "Overbought" and percentR < -80
+    upTrend := true
+    downTrend := false
+else if lastRSI == "Oversold" and percentR > -20
+    upTrend := false
+    downTrend := true
+
+if percentR[1] > -20 and percentR < -20
+    WPRoverboughtToNormal := true
+else if percentR[1] < -80 and percentR > -80
+    WPRoversoldToNormal := true
+    
+plotshape(upTrend and not showAllExtremes and WPRoversoldToNormal  ? close : na, style=shape.triangleup, location=location.belowbar, size=size.small, title="sell", color=#87cefa, display=display.all - display.status_line)
+plotshape(downTrend and not showAllExtremes and WPRoverboughtToNormal ? close : na, style=shape.triangledown, location=location.abovebar, size=size.small, title="buy", color=#87cefa, display=display.all - display.status_line)
+plotshape(showAllExtremes and WPRoverboughtToNormal ? close : na, style=shape.triangledown, location=location.abovebar, size=size.small, title="Buy", color=#87cefa, display=display.all - display.status_line)
+plotshape(showAllExtremes and WPRoversoldToNormal ? close : na, style=shape.triangleup, location=location.belowbar, size=size.small, title="Sell", color=#87cefa, display=display.all - display.status_line)
+
+if rsi >= rsiOS and rsi[1] < rsiOS 
+    oversold := true
+else if rsi <= 70 and rsi[1] > rsiOB 
+    overbought := true
+
+plotshape(oversold, style=shape.labelup, location=location.belowbar, color=color.red, text="Look to\nbuy",textcolor=color.white, size=size.tiny, title="Sell label", display=display.all - display.status_line)
+plotshape(overbought, style=shape.labeldown, location=location.abovebar, color=color.green, text="Look to\nsell",textcolor=color.white, size=size.tiny, title="Buy label", display=display.all - display.status_line)
+
+plotcross = false
+if rsi >= rsiOB and downTrend
+    plotcross := true
+    downTrend := false
+else if rsi <= rsiOS and upTrend
+    plotcross := true
+    upTrend := false
+
+plotshape(plotcross, style=shape.xcross, location=location.belowbar, color=color.red, text="EXIT",textcolor=exit_txt_col, size=size.tiny, title="Warning label", display=display.all - display.status_line)
+
+if recolor_candles
+    if percentR > -20 //overbought
+        os_candle := color.yellow
+    else
+        if percentR < -80
+            os_candle := color.rgb(225, 49, 237)
+
+        else
+            os_candle := na
+else
+    os_candle := na
+plotcandle(open,high,low,close , color = os_candle , wickcolor = os_candle , bordercolor = os_candle , editable = true, display=display.all - display.status_line)
+barcolor(os_candle, editable = true)
+
+//Plot MA'S
+SEMA1 = ta.ema(close, EMA1period)
+SEMA2 = ta.ema(close, EMA2period)
+SSMA = ta.sma(close, shortPeriod)
+SLSMA = ta.sma(close,SMA2period)
+LSMA1 = ta.sma(close,semilongPeriod)
+LSMA2 = ta.sma(close,longPeriod)
+plot (showMAs == true ? SEMA1:na, color=color.aqua, title="Short EMA 1", display=display.all - display.status_line)
+plot (showMAs == true ? SEMA2:na, color=color.fuchsia, title="Short EMA 2", display=display.all - display.status_line)
+plot (showMAs == true ? SSMA:na, color=color.teal, title="Short SMA", display=display.all - display.status_line)
+plot(showMAs == true ? SLSMA:na, color=color.orange, title="Semi-Long SMA", linewidth=2, display=display.all - display.status_line)
+plot(showMAs == true ? LSMA1:na, color=color.green, title="Long SMA 1", linewidth=3, display=display.all - display.status_line)
+plot(showMAs == true ? LSMA2:na, color=color.blue, title="Long SMA 2", linewidth=3, display=display.all - display.status_line)
+//label
+rsi_txt = math.round(rsi,2) > rsiOB ? "Overbought" : math.round(rsi,2) < rsiOS ? "Oversold" : 'Neutral'
+percentR_txt = math.round(percentR,2) > -20 ? "Overbought" : math.round(percentR,2)  < -80 ? "Oversold" : 'Neutral'
+labelTxt = "RSI: " + rsi_txt + " (" + str.tostring(math.round(rsi,2)) + ")\n%R: " + percentR_txt + " ("+ str.tostring(math.round(percentR,2)) +")"
+label_X_Loc = time_close  + (( time_close - time_close[1] ) * 2 ) // Set Label offset
+if showMAs
+    longTrend = ""
+    shortTrend = ""
+    if SEMA1 > SEMA2 and SEMA2 > SSMA
+        shortTrend := "Bullish"
+    else 
+        if SEMA1 < SEMA2 and SEMA2 < SSMA
+            shortTrend := "Bearish"
+        else
+            shortTrend := "Mixed"
+    if LSMA2 < LSMA1 and LSMA1 < SLSMA
+        longTrend := "Bullish"
+    else 
+        if LSMA2 > LSMA1 and LSMA1 > SLSMA
+            longTrend := "Bearish"
+        else
+            longTrend := "Mixed"
+    labelTxt := labelTxt + "\n\nMoving Averages\n###############\nShort Term Trend: " + shortTrend + "\nLong Term Trend: " + longTrend
+
+
+l = label.new(label_X_Loc, close, labelTxt, xloc.bar_time, yloc.price, color=col, textcolor=txt_col, size=size.normal, style=label.style_label_left, textalign=text.align_left)
+label.delete(l[1])

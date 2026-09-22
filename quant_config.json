@@ -1,0 +1,19 @@
+{
+  "agents": {
+    "smc": {
+      "enabled": true
+    },
+    "smc_liquidity": {
+      "enabled": true
+    },
+    "smc_zones": {
+      "enabled": true
+    },
+    "volume_profile": {
+      "enabled": false
+    }
+  },
+  "default_agent_threshold": 50.0,
+  "per_symbol": {},
+  "signal_threshold": 60.0
+}

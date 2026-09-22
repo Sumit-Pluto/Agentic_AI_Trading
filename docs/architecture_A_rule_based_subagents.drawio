@@ -1,0 +1,96 @@
+<mxfile host="app.diagrams.net" modified="2026-09-15T12:00:00.000Z" agent="architecture-research" version="24.0.0">
+  <diagram id="archA2" name="A v2 — Plug-in Strategies + Meta-Model + Pluggable Filters">
+    <mxGraphModel dx="1700" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="&lt;b&gt;ARCHITECTURE A (v2) — Plug-in Strategies · Shared Feature Enrichment · Meta-Model · Pluggable Filter Stack&lt;/b&gt;&lt;br&gt;&lt;i&gt;strategies &amp;amp; filters are hot-swappable registries · one meta-model judges every candidate · see INTRADAY_PIPELINE_Vnext.md&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=17;" vertex="1" parent="1">
+          <mxGeometry x="200" y="16" width="1250" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER A: STRATEGY PLUGS -->
+        <mxCell id="plugsBox" value="&lt;b&gt;LAYER A — STRATEGY PLUGS (pluggable trigger sources)&lt;/b&gt;&lt;br&gt;&lt;i&gt;each emits the standard TriggerEvent{strategy_id, setup_id, symbol, direction, entry, stop_rule, target_rule, horizon, ts}&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="120" y="90" width="1120" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="pa1" value="&lt;b&gt;algo_docx&lt;/b&gt;&lt;br&gt;setups 1–7,9&lt;br&gt;(ORB/PDH, low-vol&lt;br&gt;retrace, DEMA,&lt;br&gt;gap fade, reversal)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="140" y="140" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pa2" value="&lt;b&gt;obs_supertrend&lt;/b&gt;&lt;br&gt;indicator trigger&lt;br&gt;(live)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="335" y="140" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pa3" value="&lt;b&gt;agent_primary&lt;/b&gt;&lt;br&gt;tree-as-trigger&lt;br&gt;both directions (live)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="140" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pa4" value="&lt;b&gt;research_intraday&lt;/b&gt;&lt;br&gt;ORB+VIX, VWAP-band,&lt;br&gt;gap-fade, expiry (test)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="725" y="140" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pa5" value="&lt;b&gt;end_to_end&lt;/b&gt;&lt;br&gt;learned scanner&lt;br&gt;&quot;no blind spot&quot; (ph3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#82b366;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="920" y="140" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="paNew" value="&lt;b&gt;+ future plug&lt;/b&gt;&lt;br&gt;drop-in&lt;br&gt;(registry edit)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#b5b5b5;dashed=1;fontSize=11;fontColor=#888888;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="140" width="70" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER B: DATA + ENRICHMENT -->
+        <mxCell id="data" value="&lt;b&gt;LAYER B — SHARED FEATURE ENRICHMENT&lt;/b&gt; (every candidate gets the same vector — point-in-time, no lookahead)&lt;br&gt;agent-family scores · &lt;b&gt;sector/RS/β · breadth · implied-corr&lt;/b&gt; · &lt;b&gt;institutional (participant-OI Δ, FII/DII flow, basis, CPIV)&lt;/b&gt; · &lt;b&gt;insider/delivery&lt;/b&gt; · options (VRP split, GEX, wall-EM, skew z) · &lt;b&gt;regime (VIX/VRP/slope/vol-of-vol + Hurst/ADX/HMM)&lt;/b&gt; · &lt;b&gt;calendar+era tags&lt;/b&gt; · &lt;b&gt;gap/pre-open&lt;/b&gt; · microstructure&lt;br&gt;&lt;i&gt;free India data-layer: ind_close_all · bhavcopy(UDiFF) · participant-OI/vol · MWPL(FutEq) · pre-open · PIT/bulk · SPAN&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="120" y="240" width="1120" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER C: LABELER (train-time sidebar) -->
+        <mxCell id="label" value="&lt;b&gt;LAYER C — TRIPLE-BARRIER LABELER&lt;/b&gt; (train time)&lt;br&gt;upper=target · lower=stop · vertical=horizon/EOD&lt;br&gt;&lt;i&gt;+ cost floor · σ-unit barriers · uniqueness weights&lt;br&gt;+ overnight/intraday split · = engine/exits.simulate_position&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=8;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="380" width="300" height="150" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER D: META-MODEL -->
+        <mxCell id="meta" value="&lt;b&gt;LAYER D — META-MODEL (the win-rate lever)&lt;/b&gt;&lt;br&gt;LightGBM over [agent scores · full context · strategy_id · setup_id] → &lt;b&gt;P(win)&lt;/b&gt; (after-cost target)&lt;br&gt;+ probability calibration (Platt→isotonic→Venn-Abers, Mondrian buckets)&lt;br&gt;&lt;i&gt;per-stock &amp;amp; per-strategy behaviour emerge from ID features + tree splits — NEVER separate models&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="380" y="390" width="600" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- TRAINING sidebar (left) -->
+        <mxCell id="train" value="&lt;b&gt;TRAINING (offline, AGENT_TRAINING §11)&lt;/b&gt;&lt;br&gt;&lt;br&gt;• sub-agents: NOT trained (feature generators)&lt;br&gt;• family/leaf weights: logistic → shrink to global prior (T1, shipped)&lt;br&gt;• meta-model: LightGBM, pooled across ~180×12 trades&lt;br&gt;• labels: triple-barrier, after-cost, uniqueness-weighted&lt;br&gt;• stat-arb signals enter as bias FEATURES (overnight split,&lt;br&gt;&amp;nbsp;&amp;nbsp;pair-z zero-crossings, SUE/PEAD) — not standalone trades&lt;br&gt;• validation: purged CPCV + PBO&lt;0.5 + Deflated Sharpe&lt;br&gt;• calibrate → pick p* on after-cost EV → baseline gate&lt;br&gt;• honest ceiling: 53–56% unselected, 60–65% at 5–10% coverage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontSize=11;align=left;spacingLeft=8;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="300" height="240" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER E: PLUGGABLE FILTER STACK -->
+        <mxCell id="filtersBox" value="&lt;b&gt;LAYER E — PLUGGABLE FILTER STACK&lt;/b&gt; (each filter independently USER-TOGGLEABLE; OFF = skipped entirely; every decision logged to the outcome DB)&lt;br&gt;&lt;i&gt;kinds: veto (drop) · multiplier (scale P/size) · annotate&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="200" y="560" width="960" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="[x] cost_floor (veto)&#10;[x] regime_gate (mult)&#10;[x] ban_gate FutEq (veto)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="615" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="[x] event_blackout (veto)&#10;[x] liquidity_screen (veto)&#10;[x] wall_proximity (veto)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="455" y="615" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="[x] quote_staleness (veto)&#10;[x] dte_gate (veto)&#10;[x] vrp_gate (mult)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="690" y="615" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="[ ] forensic_avoid&#10;[ ] sentiment_veto&#10;[ ] overnight_hold&#10;(OFF = opt-in, unproven)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#b5b5b5;fontSize=11;align=left;spacingLeft=8;fontColor=#777777;" vertex="1" parent="1">
+          <mxGeometry x="925" y="615" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER F: SELECTOR + EXEC -->
+        <mxCell id="selector" value="&lt;b&gt;LAYER F — PORTFOLIO SELECTOR&lt;/b&gt;&lt;br&gt;rank ALL surviving candidates (across plugs) by calibrated P(win) · take top-K by budget · size ∝ (P−p*), vol-targeted, ¼-Kelly / CVaR-capped · session+drawdown risk limits (model cannot override)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="380" y="740" width="600" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="exec" value="&lt;b&gt;EXECUTION &amp;amp; EXITS&lt;/b&gt; — broker router · stop=lower barrier · target-1 partial=upper · trail · EOD flat · fills logged w/ 4 timestamps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="380" y="860" width="600" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="odb" value="&lt;b&gt;OUTCOME DB&lt;/b&gt;&lt;br&gt;full feature vector @entry +&lt;br&gt;realized P&amp;amp;L + which filters fired&lt;br&gt;→ nightly retrain (all layers)&lt;br&gt;→ measures each filter's real value" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="840" width="290" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="plugsBox" target="data"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="candidate + shared vector" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="data" target="meta"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="labels (train)" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.4;fontSize=11;" edge="1" parent="1" source="label" target="meta"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3b" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="train" target="meta"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="P(win)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="meta" target="filtersBox"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="survivors" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="filtersBox" target="selector"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="selector" target="exec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="outcomes" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;" edge="1" parent="1" source="exec" target="odb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="retrain" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=0.5;exitY=0;entryX=1;entryY=0.5;fontSize=11;" edge="1" parent="1" source="odb" target="train"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
