@@ -240,6 +240,8 @@ def _cli(argv=None):
     ap.add_argument("--start", default="2024-09-02")
     ap.add_argument("--end", default="2026-01-21")      # candle coverage ends here
     ap.add_argument("--stride", type=int, default=5)
+    ap.add_argument("--workers", type=int, default=0,
+                    help="0=auto (cores-1), 1=serial, N=parallel build over N workers")
     ap.add_argument("--data-dir", default=DATA_DIR)
     ap.add_argument("--no-chain", action="store_true", help="skip option chain (faster, weaker)")
     ap.add_argument("--out", default=None, help="path to save {model,bank,report} pickle")
@@ -261,8 +263,13 @@ def _cli(argv=None):
     dd = load(symbols=syms, start=a.start, end=a.end, data_dir=a.data_dir, with_chain=not a.no_chain)
     print(f"[load] {time.time()-t0:.1f}s", flush=True)
     t1 = time.time()
-    res = P.train(dd, stride=a.stride, progress=print)
-    print(f"[train] {time.time()-t1:.1f}s", flush=True)
+    workers = a.workers if a.workers > 0 else max(1, (os.cpu_count() or 2) - 1)
+    if workers > 1:
+        from .ptrain import train_parallel
+        res = train_parallel(dd, stride=a.stride, n_workers=workers, progress=print)
+    else:
+        res = P.train(dd, stride=a.stride, progress=print)
+    print(f"[train] {time.time()-t1:.1f}s ({workers} workers)", flush=True)
     rep = res["report"]
     print(json.dumps({k: rep[k] for k in ("samples", "features", "base_rate",
                                           "holdout", "walk_forward")}, indent=2, default=str))
@@ -271,7 +278,7 @@ def _cli(argv=None):
     if a.out:
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
         with open(a.out, "wb") as f:
-            pickle.dump({"model": res["model"], "bank": res["bank"], "report": rep}, f)
+            pickle.dump({"model": res["model"], "bank": res.get("bank"), "report": rep}, f)
         with open(a.out + ".report.json", "w") as f:
             json.dump(rep, f, indent=2, default=str)
         print(f"[saved] model -> {a.out}  (report -> {a.out}.report.json)")
