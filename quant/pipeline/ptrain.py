@@ -16,9 +16,22 @@ Lives in its own module so the worker functions pickle by a stable qualified nam
 from __future__ import annotations
 
 import os
+import sys
 import time
 import concurrent.futures as cf
 from collections import defaultdict
+
+# Windows ProcessPoolExecutor is hard-capped near 61 workers (64-handle WaitForMultipleObjects
+# limit). Cap below that so a 64-vCPU Windows box doesn't crash with ValueError.
+WIN_MAX_WORKERS = 60
+
+
+def resolve_workers(n=0):
+    """0/None -> auto (cores-1); clamp to a Windows-safe max; floor at 1."""
+    n = n or max(1, (os.cpu_count() or 2) - 1)
+    if sys.platform == "win32":
+        n = min(n, WIN_MAX_WORKERS)
+    return max(1, int(n))
 
 import numpy as np
 import pandas as pd
@@ -73,7 +86,7 @@ def _payloads(dd):
 
 def train_parallel(dd, plugs=("grid", "orb", "pullback"), cost_pct=0.05, stride=5,
                    n_workers=None, progress=print):
-    n_workers = n_workers or max(1, (os.cpu_count() or 2) - 1)
+    n_workers = resolve_workers(n_workers)
     payloads = _payloads(dd)
     if progress:
         progress(f"[parallel] {len(payloads)} symbols over {n_workers} workers")

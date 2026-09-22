@@ -263,9 +263,9 @@ def _cli(argv=None):
     dd = load(symbols=syms, start=a.start, end=a.end, data_dir=a.data_dir, with_chain=not a.no_chain)
     print(f"[load] {time.time()-t0:.1f}s", flush=True)
     t1 = time.time()
-    workers = a.workers if a.workers > 0 else max(1, (os.cpu_count() or 2) - 1)
+    from .ptrain import resolve_workers, train_parallel
+    workers = resolve_workers(a.workers)
     if workers > 1:
-        from .ptrain import train_parallel
         res = train_parallel(dd, stride=a.stride, n_workers=workers, progress=print)
     else:
         res = P.train(dd, stride=a.stride, progress=print)
