@@ -15,7 +15,7 @@ frontend/node_modules/
 frontend/dist/
 
 # generated runtime state / caches (training samples, bhavcopy, oi/iv stores, api caches)
-state/
+
 
 # macOS
 .DS_Store

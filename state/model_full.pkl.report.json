@@ -1,0 +1,44 @@
+{
+  "samples": 3283274,
+  "features": 31,
+  "base_rate": 0.4031,
+  "holdout": {
+    "n": 656655,
+    "auc": 0.5493,
+    "accuracy": 0.6007,
+    "brier": 0.2381
+  },
+  "walk_forward": {
+    "folds": 5,
+    "n_oos": 2736062,
+    "oos_auc": 0.546,
+    "oos_brier": 0.2393,
+    "base_rate": 0.4023,
+    "beats": false
+  },
+  "top_features": {
+    "vix": "1206",
+    "dte": "594",
+    "tod_bucket": "305",
+    "dow": "262",
+    "dist_call_wall_atr": "165",
+    "gex": "164",
+    "atr_pct": "145",
+    "range_pos": "144",
+    "rv_20": "131",
+    "dist_put_wall_atr": "116",
+    "dir_sign": "115",
+    "trend": "105"
+  },
+  "plugs": [
+    "grid",
+    "orb",
+    "pullback"
+  ],
+  "strategies_seen": [
+    "grid",
+    "orb",
+    "pullback"
+  ],
+  "n_workers": 60
+}
