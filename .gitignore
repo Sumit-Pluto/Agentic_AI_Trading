@@ -30,3 +30,4 @@ frontend/dist/
 backtest_result.json
 paper_trades.jsonl
 weights_3stocks.json
+state/
