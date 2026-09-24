@@ -1,0 +1,14 @@
+{
+  "lookback": 200,
+  "min_bars": 1,
+  "mom_len": 20,
+  "rsi_len": 14,
+  "rsi_upper": 70,
+  "rsi_lower": 30,
+  "use_stoch": true,
+  "stoch_win": 5,
+  "st_rsi_len": 14,
+  "st_len": 14,
+  "st_ksm": 3,
+  "st_dsm": 3
+}

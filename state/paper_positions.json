@@ -1,0 +1,912 @@
+{
+ "saved_at": "2026-09-11T12:43:59",
+ "positions": [
+  {
+   "id": "CGPOWER-BUY-ae995f7b",
+   "symbol": "CGPOWER",
+   "direction": "BUY",
+   "entry_price": 920.3,
+   "entry_time": "2026-07-06T13:20:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 919.3039,
+   "target1": 923.2833,
+   "target2": 925.8688,
+   "plan": {
+    "atr": 1.9888,
+    "atr_source": "atr(14)",
+    "st_line": 915.3859,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "put_wall 920 oi=418200",
+    "opposing_wall": "call_wall 1000 oi=2358750",
+    "stop_basis": "put_wall 920 -/+ 0.35*atr",
+    "stop_candidates": {
+     "put_wall 920 -/+ 0.35*atr": 919.3039,
+     "supertrend 915.39": 915.3859,
+     "atr_hard entry-/+1.4*atr": 917.5156
+    },
+    "breathing_room_edge": 919.7033,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [
+     920.0
+    ],
+    "notes": []
+   },
+   "wall_ref": {
+    "strike": 920.0,
+    "oi": 418200.0
+   },
+   "levels": [
+    920.0
+   ],
+   "hwm": 921.7999877929688,
+   "lwm": 918.5,
+   "exits": [
+    {
+     "time": "2026-07-06T13:30:00",
+     "price": 919.3039,
+     "units": 1.0,
+     "reason": "stop",
+     "pnl_per_share": -0.9961
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-06T13:20:00",
+     "from": null,
+     "to": 919.3039,
+     "reason": "initial: put_wall 920 -/+ 0.35*atr"
+    }
+   ],
+   "realized_pnl_per_share": -0.9961,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-07-06T13:39:05",
+   "last_bar": "2026-07-06T13:30:00",
+   "last_wall_check": "2026-07-06T13:20:00"
+  },
+  {
+   "id": "TATACONSUM-BUY-1693eaac",
+   "symbol": "TATACONSUM",
+   "direction": "BUY",
+   "entry_price": 1116.1,
+   "entry_time": "2026-07-06T14:00:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 1116.1,
+   "target1": 1118.1629,
+   "target2": 1119.9507,
+   "plan": {
+    "atr": 1.3753,
+    "atr_source": "atr(14)",
+    "st_line": 1113.4435,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 1200 oi=837650",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 1113.44": 1113.4435,
+     "atr_hard entry-/+1.4*atr": 1114.1746
+    },
+    "breathing_room_edge": 1115.6874,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 1118.800048828125,
+   "lwm": 1114.5999755859375,
+   "exits": [
+    {
+     "time": "2026-07-06T15:05:00",
+     "price": 1118.1629,
+     "units": 0.5,
+     "reason": "target1",
+     "pnl_per_share": 1.03145
+    },
+    {
+     "time": "2026-07-06T15:15:00",
+     "price": 1118.6,
+     "units": 0.5,
+     "reason": "eod",
+     "pnl_per_share": 1.249988
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-06T14:00:00",
+     "from": null,
+     "to": 1114.1746,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    },
+    {
+     "time": "2026-07-06T15:05:00",
+     "from": 1114.1746,
+     "to": 1116.1,
+     "reason": "t1_breakeven (partial +1.03/sh)"
+    }
+   ],
+   "realized_pnl_per_share": 2.281438,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-07-06T15:20:15",
+   "last_bar": "2026-07-06T15:15:00",
+   "last_wall_check": "2026-07-06T14:00:00"
+  },
+  {
+   "id": "VEDL-BUY-eb1118f2",
+   "symbol": "VEDL",
+   "direction": "BUY",
+   "entry_price": 280.95,
+   "entry_time": "2026-07-06T14:00:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 280.95,
+   "target1": 281.5055,
+   "target2": 281.987,
+   "plan": {
+    "atr": 0.3704,
+    "atr_source": "atr(14)",
+    "st_line": 280.6385,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 300 oi=8674450",
+    "stop_basis": "supertrend 280.64",
+    "stop_candidates": {
+     "supertrend 280.64": 280.6385,
+     "atr_hard entry-/+1.4*atr": 280.4315
+    },
+    "breathing_room_edge": 280.8389,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 282.1000061035156,
+   "lwm": 280.8500061035156,
+   "exits": [
+    {
+     "time": "2026-07-06T14:45:00",
+     "price": 281.5055,
+     "units": 0.5,
+     "reason": "target1",
+     "pnl_per_share": 0.27775
+    },
+    {
+     "time": "2026-07-06T14:50:00",
+     "price": 281.987,
+     "units": 0.5,
+     "reason": "target2",
+     "pnl_per_share": 0.5185
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-06T14:00:00",
+     "from": null,
+     "to": 280.6385,
+     "reason": "initial: supertrend 280.64"
+    },
+    {
+     "time": "2026-07-06T14:45:00",
+     "from": 280.6385,
+     "to": 280.95,
+     "reason": "t1_breakeven (partial +0.28/sh)"
+    }
+   ],
+   "realized_pnl_per_share": 0.79625,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-07-06T14:57:27",
+   "last_bar": "2026-07-06T14:50:00",
+   "last_wall_check": "2026-07-06T14:00:00"
+  },
+  {
+   "id": "GODREJPROP-BUY-9f3c8655",
+   "symbol": "GODREJPROP",
+   "direction": "BUY",
+   "entry_price": 2035.3,
+   "entry_time": "2026-07-06T14:50:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 2038.7414250057786,
+   "target1": 2040.3882,
+   "target2": 2044.7979,
+   "plan": {
+    "atr": 3.3921,
+    "atr_source": "atr(14)",
+    "st_line": 2030.6192,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 2160 oi=359775",
+    "stop_basis": "supertrend 2030.62",
+    "stop_candidates": {
+     "supertrend 2030.62": 2030.6192,
+     "atr_hard entry-/+1.4*atr": 2030.5511
+    },
+    "breathing_room_edge": 2034.2824,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [
+     2040.0
+    ],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [
+    2040.0
+   ],
+   "hwm": 2050.60009765625,
+   "lwm": 2035.300048828125,
+   "exits": [
+    {
+     "time": "2026-07-06T15:05:00",
+     "price": 2040.3882,
+     "units": 0.5,
+     "reason": "target1",
+     "pnl_per_share": 2.5441
+    },
+    {
+     "time": "2026-07-06T15:10:00",
+     "price": 2044.7979,
+     "units": 0.5,
+     "reason": "target2",
+     "pnl_per_share": 4.74895
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-06T14:50:00",
+     "from": null,
+     "to": 2030.6192,
+     "reason": "initial: supertrend 2030.62"
+    },
+    {
+     "time": "2026-07-06T15:05:00",
+     "from": 2030.6192,
+     "to": 2035.3,
+     "reason": "t1_breakeven (partial +2.54/sh)"
+    },
+    {
+     "time": "2026-07-06T15:05:00",
+     "from": 2035.3,
+     "to": 2038.7414,
+     "reason": "oi_level 2040"
+    }
+   ],
+   "realized_pnl_per_share": 7.29305,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-07-06T15:16:33",
+   "last_bar": "2026-07-06T15:10:00",
+   "last_wall_check": "2026-07-06T14:50:00"
+  },
+  {
+   "id": "BHARTIARTL-SELL-6a68c95e",
+   "symbol": "BHARTIARTL",
+   "direction": "SELL",
+   "entry_price": 1906.6,
+   "entry_time": "2026-07-13T13:40:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 1907.448,
+   "target1": 1903.044,
+   "target2": 1899.9622,
+   "plan": {
+    "atr": 2.3706,
+    "atr_source": "atr(14)",
+    "st_line": 1907.448,
+    "st_bull": false,
+    "chain": "missing",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "none",
+    "stop_basis": "supertrend 1907.45",
+    "stop_candidates": {
+     "supertrend 1907.45": 1907.448,
+     "atr_hard entry-/+1.4*atr": 1909.9189
+    },
+    "breathing_room_edge": 1907.3112,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 1913.8,
+   "lwm": 1905.2,
+   "exits": [
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 1907.448,
+     "units": 1.0,
+     "reason": "stop",
+     "pnl_per_share": -0.848
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-13T13:40:00",
+     "from": null,
+     "to": 1907.448,
+     "reason": "initial: supertrend 1907.45"
+    }
+   ],
+   "realized_pnl_per_share": -0.848,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-08-19T00:09:22",
+   "last_bar": "2026-08-12T09:15:00",
+   "last_wall_check": "2026-07-13T13:40:00"
+  },
+  {
+   "id": "DMART-SELL-da9a4ee4",
+   "symbol": "DMART",
+   "direction": "SELL",
+   "entry_price": 3995.1,
+   "entry_time": "2026-07-13T13:45:00",
+   "qty_units": 0.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 4007.0416,
+   "target1": 3982.3054,
+   "target2": 3971.2167,
+   "plan": {
+    "atr": 8.5297,
+    "atr_source": "atr(14)",
+    "st_line": 4009.8694,
+    "st_bull": false,
+    "chain": "missing",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "none",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 4009.87": 4009.8694,
+     "atr_hard entry-/+1.4*atr": 4007.0416
+    },
+    "breathing_room_edge": 3997.6589,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 4062.8,
+   "lwm": 3994.0,
+   "exits": [
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 4007.0416,
+     "units": 1.0,
+     "reason": "stop",
+     "pnl_per_share": -11.9416
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-13T13:45:00",
+     "from": null,
+     "to": 4007.0416,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    }
+   ],
+   "realized_pnl_per_share": -11.9416,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-08-19T00:09:22",
+   "last_bar": "2026-08-12T09:15:00",
+   "last_wall_check": "2026-07-13T13:45:00"
+  },
+  {
+   "id": "CDSL-SELL-b3d933b2",
+   "symbol": "CDSL",
+   "direction": "SELL",
+   "entry_price": 1442.8,
+   "entry_time": "2026-07-13T13:58:13",
+   "qty_units": 0.0,
+   "strategy": "agents",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 1442.8,
+   "target1": 1438.3841,
+   "target2": 1434.5569,
+   "plan": {
+    "atr": 2.944,
+    "atr_source": "atr(14)",
+    "st_line": 1450.5322,
+    "st_bull": false,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "put_wall 1400 oi=735300",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 1450.53": 1450.5322,
+     "atr_hard entry-/+1.4*atr": 1446.9215
+    },
+    "breathing_room_edge": 1443.6832,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [
+     1440.0
+    ],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [
+    1440.0
+   ],
+   "hwm": 1442.8,
+   "lwm": 1335.9,
+   "exits": [
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 1438.3841,
+     "units": 0.5,
+     "reason": "target1",
+     "pnl_per_share": 2.20795
+    },
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 1434.5569,
+     "units": 0.5,
+     "reason": "target2",
+     "pnl_per_share": 4.12155
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-13T13:58:13",
+     "from": null,
+     "to": 1446.9215,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    },
+    {
+     "time": "2026-08-12T09:15:00",
+     "from": 1446.9215,
+     "to": 1442.8,
+     "reason": "t1_breakeven (partial +2.21/sh)"
+    }
+   ],
+   "realized_pnl_per_share": 6.3295,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-08-19T00:09:22",
+   "last_bar": "2026-08-12T09:15:00",
+   "last_wall_check": "2026-07-13T13:58:13"
+  },
+  {
+   "id": "BHEL-BUY-e201aa10",
+   "symbol": "BHEL",
+   "direction": "BUY",
+   "entry_price": 409.5,
+   "entry_time": "2026-07-13T13:58:13",
+   "qty_units": 0.0,
+   "strategy": "agents",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 408.3967,
+   "target1": 410.6821,
+   "target2": 411.7066,
+   "plan": {
+    "atr": 0.7881,
+    "atr_source": "atr(14)",
+    "st_line": 407.3758,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 420 oi=4333875",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 407.38": 407.3758,
+     "atr_hard entry-/+1.4*atr": 408.3967
+    },
+    "breathing_room_edge": 409.2636,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [
+     410.0
+    ],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [
+    410.0
+   ],
+   "hwm": 409.5,
+   "lwm": 403.6,
+   "exits": [
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 408.3967,
+     "units": 1.0,
+     "reason": "stop",
+     "pnl_per_share": -1.1033
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-13T13:58:13",
+     "from": null,
+     "to": 408.3967,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    }
+   ],
+   "realized_pnl_per_share": -1.1033,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-08-19T00:09:22",
+   "last_bar": "2026-08-12T09:15:00",
+   "last_wall_check": "2026-07-13T13:58:13"
+  },
+  {
+   "id": "TECHM-BUY-1a0e7bcc",
+   "symbol": "TECHM",
+   "direction": "BUY",
+   "entry_price": 1514.6,
+   "entry_time": "2026-07-13T13:58:13",
+   "qty_units": 0.0,
+   "strategy": "agents",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 1514.6,
+   "target1": 1520.6132,
+   "target2": 1525.8247,
+   "plan": {
+    "atr": 4.0088,
+    "atr_source": "atr(14)",
+    "st_line": 1508.7877,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 1564 oi=248400",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 1508.79": 1508.7877,
+     "atr_hard entry-/+1.4*atr": 1508.9877
+    },
+    "breathing_room_edge": 1513.3974,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [
+     1520.0
+    ],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [
+    1520.0
+   ],
+   "hwm": 1656.0,
+   "lwm": 1514.6,
+   "exits": [
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 1520.6132,
+     "units": 0.5,
+     "reason": "target1",
+     "pnl_per_share": 3.0066
+    },
+    {
+     "time": "2026-08-12T09:15:00",
+     "price": 1525.8247,
+     "units": 0.5,
+     "reason": "target2",
+     "pnl_per_share": 5.61235
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-07-13T13:58:13",
+     "from": null,
+     "to": 1508.9877,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    },
+    {
+     "time": "2026-08-12T09:15:00",
+     "from": 1508.9877,
+     "to": 1514.6,
+     "reason": "t1_breakeven (partial +3.01/sh)"
+    }
+   ],
+   "realized_pnl_per_share": 8.61895,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-08-19T00:09:22",
+   "last_bar": "2026-08-12T09:15:00",
+   "last_wall_check": "2026-07-13T13:58:13"
+  },
+  {
+   "id": "TIINDIA-SELL-aed4659b",
+   "symbol": "TIINDIA",
+   "direction": "SELL",
+   "entry_price": 2639.0,
+   "entry_time": "2026-09-08T12:02:20",
+   "qty_units": 0.0,
+   "strategy": "agents",
+   "segment": "FNO",
+   "state": "CLOSED",
+   "stop": 2647.7354,
+   "target1": 2629.6407,
+   "target2": 2621.5293,
+   "plan": {
+    "atr": 6.2396,
+    "atr_source": "atr(14)",
+    "st_line": 2651.664,
+    "st_bull": false,
+    "chain": "missing",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "none",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 2651.66": 2651.664,
+     "atr_hard entry-/+1.4*atr": 2647.7354
+    },
+    "breathing_room_edge": 2640.8719,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 2650.7,
+   "lwm": 2633.8,
+   "exits": [
+    {
+     "time": "2026-09-08T12:40:00",
+     "price": 2647.7354,
+     "units": 1.0,
+     "reason": "stop",
+     "pnl_per_share": -8.7354
+    }
+   ],
+   "stop_history": [
+    {
+     "time": "2026-09-08T12:02:20",
+     "from": null,
+     "to": 2647.7354,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    }
+   ],
+   "realized_pnl_per_share": -8.7354,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-09-08T17:29:44",
+   "last_bar": "2026-09-08T12:40:00",
+   "last_wall_check": "2026-09-08T12:02:20"
+  },
+  {
+   "id": "BHARTIARTL-BUY-7798ab6e",
+   "symbol": "BHARTIARTL",
+   "direction": "BUY",
+   "entry_price": 1844.5,
+   "entry_time": "2026-09-11T12:15:00",
+   "qty_units": 1.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "OPEN",
+   "stop": 1840.6603,
+   "target1": 1848.614,
+   "target2": 1852.1795,
+   "plan": {
+    "atr": 2.7427,
+    "atr_source": "atr(14)",
+    "st_line": 1840.4865,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "put_wall 1840 oi=1630200",
+    "opposing_wall": "call_wall 1900 oi=3229050",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "put_wall 1840 -/+ 0.35*atr": 1839.0401,
+     "supertrend 1840.49": 1840.4865,
+     "atr_hard entry-/+1.4*atr": 1840.6603
+    },
+    "breathing_room_edge": 1843.6772,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": {
+    "strike": 1840.0,
+    "oi": 1630200.0
+   },
+   "levels": [],
+   "hwm": 1847.2,
+   "lwm": 1842.7,
+   "exits": [],
+   "stop_history": [
+    {
+     "time": "2026-09-11T12:15:00",
+     "from": null,
+     "to": 1840.6603,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    }
+   ],
+   "realized_pnl_per_share": 0.0,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-09-11T12:40:50",
+   "last_bar": "2026-09-11T12:35:00",
+   "last_wall_check": "2026-09-11T12:30:00"
+  },
+  {
+   "id": "MARICO-BUY-5beba460",
+   "symbol": "MARICO",
+   "direction": "BUY",
+   "entry_price": 805.65,
+   "entry_time": "2026-09-11T12:35:00",
+   "qty_units": 1.0,
+   "strategy": "intraday",
+   "segment": "FNO",
+   "state": "OPEN",
+   "stop": 804.1105,
+   "target1": 807.9425,
+   "target2": 809.9294,
+   "plan": {
+    "atr": 1.5283,
+    "atr_source": "atr(14)",
+    "st_line": 804.1105,
+    "st_bull": true,
+    "chain": "present",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "call_wall 850 oi=840000",
+    "stop_basis": "supertrend 804.11",
+    "stop_candidates": {
+     "supertrend 804.11": 804.1105,
+     "atr_hard entry-/+1.4*atr": 803.5103
+    },
+    "breathing_room_edge": 805.1915,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 805.65,
+   "lwm": 805.65,
+   "exits": [],
+   "stop_history": [
+    {
+     "time": "2026-09-11T12:35:00",
+     "from": null,
+     "to": 804.1105,
+     "reason": "initial: supertrend 804.11"
+    }
+   ],
+   "realized_pnl_per_share": 0.0,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-09-11T12:40:23",
+   "last_bar": "2026-09-11T12:35:00",
+   "last_wall_check": "2026-09-11T12:35:00"
+  },
+  {
+   "id": "YESBANK-BUY-ee8b8a55",
+   "symbol": "YESBANK",
+   "direction": "BUY",
+   "entry_price": 22.83,
+   "entry_time": "2026-09-11T12:40:02",
+   "qty_units": 1.0,
+   "strategy": "agents",
+   "segment": "FNO",
+   "state": "OPEN",
+   "stop": 22.7425,
+   "target1": 22.9237,
+   "target2": 23.005,
+   "plan": {
+    "atr": 0.0625,
+    "atr_source": "atr(14)",
+    "st_line": 22.5996,
+    "st_bull": true,
+    "chain": "missing",
+    "protective_wall": "none within 2.5*atr",
+    "opposing_wall": "none",
+    "stop_basis": "atr_hard entry-/+1.4*atr",
+    "stop_candidates": {
+     "supertrend 22.60": 22.5996,
+     "atr_hard entry-/+1.4*atr": 22.7425
+    },
+    "breathing_room_edge": 22.8113,
+    "target1_basis": "atr_fallback entry+/-1.5*atr",
+    "target2_basis": "atr_fallback entry+/-2.8*atr",
+    "ladder": [],
+    "notes": []
+   },
+   "wall_ref": null,
+   "levels": [],
+   "hwm": 22.83,
+   "lwm": 22.83,
+   "exits": [],
+   "stop_history": [
+    {
+     "time": "2026-09-11T12:40:02",
+     "from": null,
+     "to": 22.7425,
+     "reason": "initial: atr_hard entry-/+1.4*atr"
+    }
+   ],
+   "realized_pnl_per_share": 0.0,
+   "live": false,
+   "live_qty": 0,
+   "live_qty_left": 0,
+   "live_entry_fill": null,
+   "live_pending_close": 0,
+   "live_orders": [],
+   "last_update": "2026-09-11T12:43:59",
+   "last_bar": "2026-09-11T12:40:02",
+   "last_wall_check": "2026-09-11T12:40:02"
+  }
+ ]
+}
