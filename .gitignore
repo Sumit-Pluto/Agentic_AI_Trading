@@ -2,6 +2,21 @@
 .env
 .session_token
 
+# gateway runtime artifacts (broker session tokens, sqlite db, logs)
+gateway/.env
+gateway/*.db
+gateway/*.db-wal
+gateway/*.db-shm
+gateway/**/token_store*.json
+gateway/venv/
+
+# intraday engine runtime state (journal db, caches, logs)
+intraday/*.db
+intraday/*.db-wal
+intraday/*.db-shm
+intraday/state/
+intraday/logs/
+
 # daily scrip master downloads
 data/
 
