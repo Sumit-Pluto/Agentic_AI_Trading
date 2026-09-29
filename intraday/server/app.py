@@ -1,0 +1,208 @@
+"""FastAPI backend for the intraday cockpit (PDF §4 reporting + live push).
+
+  WS  /ws              → the live engine snapshot every tick (state, positions,
+                          signals, agent rows, option chains, equity point)
+  GET /api/state        → current engine state
+      /api/positions     /api/orders  /api/trades  /api/signals   (from journal)
+      /api/agents        → last scan's per-agent rows
+      /api/chain?symbol   → latest built chain (strikes, greeks, OI)
+      /api/equity         → intraday equity curve
+      /api/reporting      → daily/summary metrics (win rate, P&L, drawdown, latency)
+      /api/config (GET/POST)   /api/pause (POST)   /api/mode (GET/POST)
+  /                     → the built React cockpit (frontend/dist)
+
+Run:  uvicorn intraday.server.app:app --host 0.0.0.0 --port 8080
+"""
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from .. import config as config_mod
+from .runner import EngineRunner
+
+_ROOT = Path(__file__).resolve().parents[2]
+_DIST = _ROOT / "frontend" / "dist"
+
+runner: EngineRunner | None = None
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    global runner
+    cfg = config_mod.load()
+    runner = EngineRunner(cfg)
+    runner.start(asyncio.get_running_loop())
+    yield
+    runner.stop()
+
+
+app = FastAPI(title="Intraday Agentic Cockpit", lifespan=_lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                   allow_headers=["*"])
+
+
+def _store():
+    return runner.store
+
+
+def _rows(sql: str, args=()):
+    return [dict(r) for r in _store().q(sql, args)]
+
+
+# ---------------- live stream ----------------
+@app.websocket("/ws")
+async def ws(websocket: WebSocket):
+    await websocket.accept()
+    q = runner.subscribe()
+    try:
+        await websocket.send_json({"type": "snapshot", **runner.snapshot()})
+        while True:
+            snap = await q.get()
+            await websocket.send_json({"type": "snapshot", **snap})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        runner.unsubscribe(q)
+
+
+# ---------------- REST ----------------
+@app.get("/api/state")
+def state():
+    return runner.snapshot().get("state", {})
+
+
+@app.get("/api/positions")
+def positions():
+    return {"positions": runner.snapshot().get("positions", [])}
+
+
+@app.get("/api/orders")
+def orders(limit: int = 100):
+    return {"orders": _rows("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))}
+
+
+@app.get("/api/trades")
+def trades(limit: int = 200):
+    return {"trades": _rows("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))}
+
+
+@app.get("/api/signals")
+def signals(limit: int = 100):
+    return {"signals": _rows("SELECT id,ts,date,symbol,direction,score_buy,score_sell,"
+                             "regime,instrument,acted FROM signals ORDER BY id DESC LIMIT ?",
+                             (limit,))}
+
+
+@app.get("/api/agents")
+def agents():
+    return {"rows": runner.snapshot().get("agent_rows", []),
+            "regime": runner.snapshot().get("state", {}).get("regime", {})}
+
+
+@app.get("/api/chain")
+def chain(symbol: str = ""):
+    chains = runner.snapshot().get("chains", {})
+    if symbol:
+        return chains.get(symbol) or {}
+    return chains
+
+
+@app.get("/api/equity")
+def equity(limit: int = 500):
+    rows = _rows("SELECT ts,date,equity,realized_pnl,unrealized_pnl,n_positions "
+                 "FROM equity ORDER BY ts DESC LIMIT ?", (limit,))
+    rows.reverse()
+    return {"curve": rows}
+
+
+@app.get("/api/reporting")
+def reporting():
+    """Summary metrics from the journal (PDF §4)."""
+    t = _rows("SELECT pnl,r,side,strategy,underlying,exit_reason,latency,date FROM ("
+              "SELECT tr.pnl,tr.r,tr.side,tr.strategy,tr.underlying,tr.exit_reason,"
+              "NULL latency,tr.date FROM trades tr) ORDER BY date")
+    n = len(t)
+    wins = [x for x in t if (x["pnl"] or 0) > 0]
+    total = sum((x["pnl"] or 0) for x in t)
+    lat = _rows("SELECT latency_ms FROM orders WHERE latency_ms IS NOT NULL")
+    lat_vals = [x["latency_ms"] for x in lat if x["latency_ms"] is not None]
+
+    def _group(field):
+        g: dict = {}
+        for x in t:
+            k = x.get(field) or "?"
+            gg = g.setdefault(k, {"n": 0, "pnl": 0.0, "wins": 0})
+            gg["n"] += 1; gg["pnl"] += (x["pnl"] or 0)
+            gg["wins"] += 1 if (x["pnl"] or 0) > 0 else 0
+        return g
+
+    # max drawdown from the equity curve
+    eq = [r["equity"] for r in _rows("SELECT equity FROM equity ORDER BY ts")]
+    peak = dd = 0.0
+    for e in eq:
+        peak = max(peak, e); dd = max(dd, peak - e)
+
+    return {
+        "trades": n, "wins": len(wins),
+        "win_rate": round(len(wins) / n * 100, 1) if n else 0.0,
+        "total_pnl": round(total, 0),
+        "avg_win": round(sum(x["pnl"] for x in wins) / len(wins), 0) if wins else 0.0,
+        "avg_loss": round(sum(x["pnl"] for x in t if (x["pnl"] or 0) <= 0)
+                          / max(1, n - len(wins)), 0),
+        "max_drawdown": round(dd, 0),
+        "avg_latency_ms": round(sum(lat_vals) / len(lat_vals), 1) if lat_vals else None,
+        "by_strategy": _group("strategy"), "by_symbol": _group("underlying"),
+        "by_exit": _group("exit_reason"),
+    }
+
+
+@app.get("/api/config")
+def get_config():
+    return runner.cfg
+
+
+@app.post("/api/config")
+async def set_config(body: dict):
+    # mutate in place so the loop/governor/rules (which hold the same dict) see it
+    for k, v in (body or {}).items():
+        if k in config_mod.DEFAULTS:
+            runner.cfg[k] = v
+    config_mod.save(runner.cfg)
+    return {"ok": True, "config": runner.cfg}
+
+
+@app.post("/api/pause")
+async def pause(body: dict):
+    runner.cfg["paused"] = bool(body.get("paused", True))
+    return {"paused": runner.cfg["paused"]}
+
+
+@app.get("/api/mode")
+def get_mode():
+    return {"mode": runner.cfg.get("mode", "paper"), "engine": runner.mode}
+
+
+@app.post("/api/mode")
+async def set_mode(body: dict):
+    want = str(body.get("mode", "paper")).lower()
+    if want == "live" and runner.mode != "live":
+        return JSONResponse(status_code=400, content={
+            "error": "LIVE trading needs the Gateway on the IP-whitelisted VPS. "
+                     "Start the server with engine_mode=live once the Gateway is "
+                     "connected; this demo runs PAPER on the simulated market."})
+    runner.cfg["mode"] = want
+    return {"mode": runner.cfg["mode"]}
+
+
+# ---------------- static (the built cockpit) — mounted last ----------------
+if _DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="app")

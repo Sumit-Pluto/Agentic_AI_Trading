@@ -31,9 +31,16 @@ intraday/
   data/bars.py        ■ tick→OHLCV bar aggregator (+ vwap); LiveContext wired to it
   gateway_client/ws   ■ live WS subscriber (touchline + depth), reconnecting
   runtime/loop.py     ■ intraday session loop — step(): exits→kill→scan→size→gate→place→mark
-  server/             ▹ Phase 3 — FastAPI (REST from journal + WS push to the UI)
+  data/sim.py         ■ SimContext — simulated NIFTY/BANKNIFTY market (demo, no broker)
+  server/             ■ FastAPI: WS live-push + REST (state/positions/orders/trades/signals/
+                          agents/chain/equity/reporting/config/pause/mode); serves the cockpit
   training/ llm/      ▹ Phase 4 — champion/challenger brain · optional LLM explain hook
 ```
+
+The **cockpit** UI lives in `../frontend` (React + Vite + TS, WebSocket-driven):
+Cockpit (tiles + live equity + signals + positions), Option Chain heatmap,
+Agents (per-family score bars + regime), Journal (orders + trades), Reporting
+(win-rate/P&L/drawdown/latency + by-strategy/symbol/exit), Settings (live risk knobs).
 
 §8 conflict management lives in the Gateway: `gateway/app/services/execution_coordinator.py`
 (per-contract order-lock, cross-strategy intent dedup, per-account serialized submit),
@@ -52,6 +59,20 @@ python -m pytest intraday/tests -q      # 27 pass: greeks/chain pipeline, paper 
                                         # and a full session loop (entry→exit, square-off,
                                         # daily-loss halt)
 ```
+
+## Run the cockpit demo (no broker needed)
+
+```bash
+./run_cockpit.sh          # builds the UI if needed, serves on http://127.0.0.1:8080
+```
+
+Opens the live cockpit driven by a **simulated** NIFTY/BANKNIFTY market — the
+whole agentic system (25 agents → scanner → risk → rules → orders → I0–I8 exits)
+trades on screen, journaling everything, with live P&L/positions/option-chain/
+agent-breakdown. Needs Python 3.11+ with `fastapi uvicorn pandas numpy` and a
+built `frontend/dist` (the script builds it). To drive the **real Shoonya** feed,
+run with `engine_mode=live` once the Gateway is up (see `../gateway/README.md`) —
+identical engine, only the data source changes.
 
 ## Live acceptance (on the VPS, Gateway up + connected)
 

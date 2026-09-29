@@ -43,6 +43,7 @@ class SessionLoop:
         self.equity_curve: list[float] = []
         self.halted = False
         self.equity = float(self.cfg.get("equity_rupees", 200000.0))
+        self.last_scan: dict = {}      # last scan for the UI (regime, signals, agent rows)
 
     # ---------- helpers ----------
     def _paused(self) -> bool:
@@ -99,10 +100,22 @@ class SessionLoop:
             self._flatten_all(now, "daily-loss kill")
             self.halted = True
 
-        # 3. entries
+        # 3. scan every tick (for the live UI), act only when entries are allowed
+        try:
+            signals, regime, rows = self.scanner.scan()
+            self.last_scan = {"ts": now.isoformat(), "regime": regime,
+                              "rows": rows,
+                              "signals": [self._signal_view(s) for s in signals]}
+        except Exception:
+            signals, regime = [], (self.last_scan.get("regime") if self.last_scan else {}) or {}
         fired = 0
         if self._entries_allowed(now):
-            fired = self._scan_and_enter(now)
+            for sig in signals:
+                try:
+                    if self._enter(sig, regime, now):
+                        fired += 1
+                except Exception:
+                    continue
 
         # 4. mark equity
         unrealized = self._unrealized(now)
@@ -194,19 +207,12 @@ class SessionLoop:
         return tot
 
     # ---------- entries ----------
-    def _scan_and_enter(self, now: dt.datetime) -> int:
-        try:
-            signals, regime, _rows = self.scanner.scan()
-        except Exception:
-            return 0
-        fired = 0
-        for sig in signals:
-            try:
-                if self._enter(sig, regime, now):
-                    fired += 1
-            except Exception:
-                continue
-        return fired
+    @staticmethod
+    def _signal_view(s) -> dict:
+        return {"ts": s.ts.isoformat(), "symbol": s.symbol, "direction": s.direction,
+                "score_buy": round(s.score_buy, 1), "score_sell": round(s.score_sell, 1),
+                "family_scores": {k: round(v, 1) for k, v in (s.family_scores or {}).items()},
+                "instrument": s.instrument}
 
     def _enter(self, sig, regime: dict, now: dt.datetime) -> bool:
         inst = sig.instrument or {}

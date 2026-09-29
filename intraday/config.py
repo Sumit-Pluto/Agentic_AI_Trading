@@ -57,6 +57,10 @@ DEFAULTS: dict = {
     "paused": False,
     "slippage_pct": 0.10,                        # paper-fill slippage assumption
 
+    # ── server / demo ─────────────────────────────────────────────────────
+    "engine_mode": "sim",                        # sim (simulated market) | live (Gateway)
+    "demo_step_seconds": 2.0,                    # loop/broadcast cadence in the server
+
     # ── LLM (PDF §6) — OFF; interface only, template fallback ──────────────
     "llm_enabled": False,
     "llm_base_url": "",
