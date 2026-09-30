@@ -17,8 +17,8 @@ intraday/*.db-shm
 intraday/state/
 intraday/logs/
 
-# daily scrip master downloads
-data/
+# daily scrip master downloads (repo-root only — must NOT match intraday/data/ source)
+/data/
 
 # python
 .venv/
