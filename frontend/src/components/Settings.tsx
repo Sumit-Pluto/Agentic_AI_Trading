@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../lib/live'
 
 const KNOBS: { key: string; label: string; group: string }[] = [
+  { key: 'total_budget', label: 'Total budget (₹)', group: 'Capital' },
+  { key: 'soft_cap_pct', label: 'Soft cap (%)', group: 'Capital' },
+  { key: 'hard_cap_pct', label: 'Hard cap (%)', group: 'Capital' },
+  { key: 'global_sl_pct', label: 'Global MTM SL (%)', group: 'Capital' },
+  { key: 'margin_safety_factor', label: 'Margin safety ×', group: 'Capital' },
   { key: 'risk_per_trade_pct', label: 'Risk / trade (%)', group: 'Money & Risk' },
   { key: 'max_daily_loss_rupees', label: 'Max daily loss (₹)', group: 'Money & Risk' },
   { key: 'max_positions', label: 'Max open positions', group: 'Money & Risk' },
@@ -10,11 +15,13 @@ const KNOBS: { key: string; label: string; group: string }[] = [
   { key: 'score_threshold', label: 'Signal threshold', group: 'Decision' },
   { key: 'score_margin', label: 'Direction margin', group: 'Decision' },
   { key: 'atr_stop_mult', label: 'ATR stop ×', group: 'Decision' },
+  { key: 'model_filter_min_prob', label: 'Model min P(win)', group: 'Decision' },
   { key: 'target_r_1', label: 'Target 1 (R)', group: 'Exits' },
   { key: 'target_r_2', label: 'Target 2 (R)', group: 'Exits' },
   { key: 'trail_atr_mult', label: 'Trail ATR ×', group: 'Exits' },
   { key: 'square_off_time', label: 'Square-off time', group: 'Session' },
-  { key: 'demo_step_seconds', label: 'Sim step (s)', group: 'Session' },
+  { key: 'no_new_entries_after', label: 'No new entries after', group: 'Session' },
+  { key: 'demo_step_seconds', label: 'Scan step (s)', group: 'Session' },
 ]
 
 export function Settings() {

@@ -3,9 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 // ---- snapshot types (mirror intraday/server/runner._snapshot) ----
 export interface Regime { on?: boolean; scalar?: number; detail?: string; vetoes?: string[]; avg?: number }
 export interface EngineState {
-  mode?: string; paused?: boolean; halted?: boolean; now?: string; square_off?: boolean
+  mode?: string; trading_mode?: string; cap_state?: string
+  paused?: boolean; halted?: boolean; now?: string; square_off?: boolean
   equity?: number | null; realized?: number | null; unrealized?: number | null
   day_pnl?: number | null; n_positions?: number; entries?: number; vix?: number | null; regime?: Regime
+}
+export interface Budget {
+  total?: number | null; deployed?: number | null; utilisation_pct?: number | null
+  cap_state?: string; soft_cap_pct?: number | null; hard_cap_pct?: number | null
 }
 export interface Position {
   symbol: string; underlying: string; side: string; right: string; strike: number
@@ -33,6 +38,7 @@ export interface Chain {
 export interface Snapshot {
   type?: string; seq: number; state: EngineState; positions: Position[]; signals: Signal[]
   agent_rows: AgentRow[]; chains: Record<string, Chain>; equity_point?: { t: string; equity: number | null }
+  budget?: Budget; funds?: Record<string, unknown> | null
 }
 
 // ---- REST ----

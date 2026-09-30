@@ -30,6 +30,14 @@ from .runner import EngineRunner
 _ROOT = Path(__file__).resolve().parents[2]
 _DIST = _ROOT / "frontend" / "dist"
 
+# load intraday/.env (GATEWAY_*, OPTIONSMITH_CHAIN_DB, INTRADAY_*) if present, so
+# manual runs work without sourcing; systemd also sets these via EnvironmentFile.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_ROOT / "intraday" / ".env")
+except Exception:
+    pass
+
 runner: EngineRunner | None = None
 
 

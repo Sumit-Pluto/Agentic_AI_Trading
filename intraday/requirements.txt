@@ -1,0 +1,14 @@
+# Intraday AI engine + cockpit backend
+fastapi>=0.111
+uvicorn[standard]>=0.29
+python-dotenv>=1.0
+requests>=2.31
+websocket-client>=1.6
+pandas>=2.0
+numpy>=1.24
+# trained-model P(win) filter (state/model_full.pkl = lightgbm + isotonic)
+lightgbm>=4.0
+scikit-learn>=1.3
+scipy>=1.10
+# tests
+pytest>=8.0
