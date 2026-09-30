@@ -61,6 +61,11 @@ DEFAULTS: dict = {
     "engine_mode": "sim",                        # sim (simulated market) | live (Gateway)
     "demo_step_seconds": 2.0,                    # loop/broadcast cadence in the server
 
+    # ── trained-model probability filter (state/model_full.pkl) ────────────
+    "model_filter_enabled": False,               # gate signals on the trained model's P(win)
+    "model_filter_min_prob": 0.50,               # take/upsize only above this win-probability
+    "model_path": "",                            # blank = state/model_full.pkl (or $INTRADAY_MODEL)
+
     # ── LLM (PDF §6) — OFF; interface only, template fallback ──────────────
     "llm_enabled": False,
     "llm_base_url": "",

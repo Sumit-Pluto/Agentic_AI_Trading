@@ -20,6 +20,7 @@ from ..brokers import PaperBroker
 from ..contracts import Brain, OrderIntent, Position
 from ..exits import ExitMarket, manage
 from ..intelligence import Scanner
+from ..model import ModelFilter
 from ..options.models import IST, market_session
 from ..orders import OrderManager
 from ..risk import Governor
@@ -36,6 +37,7 @@ class SessionLoop:
         self.scanner = Scanner(ctx, self.brain, self.cfg)
         self.governor = Governor(self.cfg)
         self.rules = RuleEngine(self.cfg)
+        self.model_filter = ModelFilter.maybe(self.cfg)   # trained-model P(win) gate (optional)
         self.broker = broker or PaperBroker(self.cfg.get("slippage_pct", 0.10))
         self.orders = OrderManager(self.broker, store, self.rules, self.cfg)
         self.killswitch = killswitch          # optional callable -> bool (paused)
@@ -224,6 +226,25 @@ class SessionLoop:
             return False
         if ch is None:
             return False
+
+        # trained-model probability filter (optional): the model can VETO or
+        # scale, never invent a trade. Disabled filter / unscorable row → pass.
+        if self.model_filter.enabled:
+            try:
+                idx = getattr(self.ctx, "index_symbol", None) or self.cfg.get("index_symbol", "NIFTY")
+                ibars = self.ctx.bars(idx)
+            except Exception:
+                ibars = None
+            try:
+                vix = self.ctx.vix()
+            except Exception:
+                vix = None
+            prob = self.model_filter.win_prob(sig, ch, self.ctx.bars(sig.symbol), ibars, vix, now)
+            if sig.instrument is not None and prob is not None:
+                sig.instrument["win_prob"] = round(prob, 3)
+            if not self.model_filter.passes(prob):
+                return False
+
         spot = ch.spot
         sl_pts = self._atr_pts(sig.symbol, spot)
         size = self.governor.size(instrument=inst, chain=ch, sl_pts=sl_pts,
