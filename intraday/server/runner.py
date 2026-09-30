@@ -33,10 +33,14 @@ def _num(x):
 class EngineRunner:
     def __init__(self, cfg: dict | None = None, mode: str | None = None):
         self.cfg = cfg or load_cfg()
-        self.mode = mode or self.cfg.get("engine_mode", "sim")   # "sim" | "live"
+        # engine_mode = DATA source (sim | live); cfg["mode"] = BROKER (paper | live)
+        self.engine_mode = mode or self.cfg.get("engine_mode", "sim")
         self.store = Store()
+        self.client = self._build_client()
         self.ctx = self._make_ctx()
-        self.loop = SessionLoop(self.ctx, self.store, self.cfg, brain=Brain.equal())
+        self.loop = SessionLoop(self.ctx, self.store, self.cfg, brain=Brain.equal(),
+                                broker=self._make_broker(str(self.cfg.get("mode", "paper"))))
+        self._wire_funds()
         self.step_seconds = float(self.cfg.get("demo_step_seconds", 2.0))
         self._subs: set[asyncio.Queue] = set()
         self._async_loop: asyncio.AbstractEventLoop | None = None
@@ -45,14 +49,69 @@ class EngineRunner:
         self._lock = threading.Lock()
         self._snap: dict = {}
         self._seq = 0
+        self._funds_at, self._funds_val = 0.0, None
+
+    @property
+    def mode(self) -> str:                    # data-source label (for the snapshot)
+        return self.engine_mode
+
+    def _build_client(self):
+        """A GatewayClient if creds are configured, else None (local dev / sim)."""
+        try:
+            from ..gateway_client import GatewayClient
+            return GatewayClient()
+        except Exception as e:
+            print(f"[runner] gateway client unavailable ({e}); sim data / paper broker")
+            return None
 
     def _make_ctx(self):
-        if self.mode == "live":
-            from ..data.context import LiveContext
-            from ..gateway_client import GatewayClient
-            return LiveContext(GatewayClient(), self.cfg)
+        if self.engine_mode == "live" and self.client is not None:
+            from ..data.chains_db import GatewayChainsContext
+            return GatewayChainsContext(self.client, self.cfg)
         from ..data.sim import SimContext
         return SimContext(self.cfg)
+
+    def _make_broker(self, mode: str):
+        if str(mode).lower() == "live" and self.client is not None:
+            from ..brokers import GatewayBroker
+            return GatewayBroker(self.client, product_type="I")  # MIS: distinct from snowball/swing NRML
+        from ..brokers import PaperBroker
+        return PaperBroker(float(self.cfg.get("slippage_pct", 0.10)))
+
+    def _wire_funds(self):
+        live = str(self.cfg.get("mode", "paper")).lower() == "live" and self.client is not None
+        self.loop.funds_provider = (lambda: self._funds()) if live else None
+
+    def _funds(self):
+        if time.time() - self._funds_at < 5 and self._funds_val is not None:
+            return self._funds_val
+        try:
+            self._funds_val = self.client.funds() if self.client else None
+        except Exception:
+            self._funds_val = None
+        self._funds_at = time.time()
+        return self._funds_val
+
+    def set_mode(self, mode: str, confirm: str = "") -> dict:
+        """Toggle PAPER<->LIVE. LIVE requires typed confirm + a Gateway client."""
+        mode = str(mode).lower()
+        if mode == "live":
+            if confirm != "LIVE":
+                return {"error": "type LIVE to confirm real-money trading"}
+            if self.client is None:
+                self.client = self._build_client()
+            if self.client is None:
+                return {"error": "no Gateway client — set GATEWAY_CLIENT_ID/SECRET and "
+                                 "ensure the Gateway broker session is connected"}
+        self.cfg["mode"] = mode
+        try:
+            from .. import config as _c
+            _c.save(self.cfg)
+        except Exception:
+            pass
+        self.loop.set_broker(self._make_broker(mode))
+        self._wire_funds()
+        return {"mode": mode, "broker": self.loop.broker.name}
 
     # ---------- lifecycle ----------
     def start(self, async_loop: asyncio.AbstractEventLoop):
@@ -92,20 +151,35 @@ class EngineRunner:
         self._seq += 1
         now = self.ctx.now()
         chains = {s: self._chain_view(self.ctx.chain(s)) for s in self.ctx.symbols()}
+        gov = self.loop.governor
+        pos = self.loop.positions
+        trading_mode = str(self.cfg.get("mode", "paper"))
+        funds = self._funds() if (self.client and trading_mode.lower() == "live") else None
+        budget = {
+            "total": _num(gov.budget()), "deployed": _num(gov.deployed_premium(pos)),
+            "utilisation_pct": _num(gov.utilisation_pct(pos)),
+            "cap_state": gov.cap_state(pos),
+            "soft_cap_pct": self.cfg.get("soft_cap_pct"),
+            "hard_cap_pct": self.cfg.get("hard_cap_pct"),
+        }
         return {
             "seq": self._seq,
             "state": {
-                "mode": self.mode, "paused": bool(self.cfg.get("paused", False)),
+                "mode": self.mode, "trading_mode": trading_mode,
+                "paused": bool(self.cfg.get("paused", False)),
                 "halted": self.loop.halted, "now": now.isoformat(),
                 "square_off": self.ctx.is_square_off(now),
                 "equity": _num(st.get("equity")), "realized": _num(st.get("realized")),
                 "unrealized": _num(st.get("unrealized")),
                 "day_pnl": _num((st.get("realized") or 0) + (st.get("unrealized") or 0)),
                 "n_positions": st.get("positions", 0), "entries": st.get("entries", 0),
+                "cap_state": budget["cap_state"],
                 "vix": _num(getattr(self.ctx, "vix", lambda: None)()),
                 "regime": (self.loop.last_scan or {}).get("regime", {}),
             },
-            "positions": [self._pos_view(p) for p in self.loop.positions],
+            "budget": budget,
+            "funds": funds,
+            "positions": [self._pos_view(p) for p in pos],
             "signals": (self.loop.last_scan or {}).get("signals", []),
             "agent_rows": (self.loop.last_scan or {}).get("rows", []),
             "chains": chains,

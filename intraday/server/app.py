@@ -182,25 +182,47 @@ async def set_config(body: dict):
 
 @app.post("/api/pause")
 async def pause(body: dict):
+    """Start/Stop the scanner. Stop (paused=True) halts NEW entries; open
+    positions keep running under the exit engine unless square_off is set."""
     runner.cfg["paused"] = bool(body.get("paused", True))
+    if runner.cfg["paused"] and body.get("square_off"):
+        runner.loop.request_flatten("stop: square-off")
     return {"paused": runner.cfg["paused"]}
+
+
+@app.post("/api/kill")
+async def kill_switch():
+    """Live-only kill: halt trading for the day AND flatten all open positions."""
+    runner.cfg["paused"] = True
+    runner.loop.request_flatten("kill switch", halt=True)
+    return {"halted": True, "paused": True}
+
+
+@app.get("/api/budget")
+def budget():
+    s = runner.snapshot()
+    return {"budget": s.get("budget", {}), "funds": s.get("funds")}
+
+
+@app.get("/api/funds")
+def funds():
+    return {"funds": runner._funds()}
 
 
 @app.get("/api/mode")
 def get_mode():
-    return {"mode": runner.cfg.get("mode", "paper"), "engine": runner.mode}
+    return {"mode": runner.cfg.get("mode", "paper"), "engine": runner.engine_mode,
+            "broker": runner.loop.broker.name}
 
 
 @app.post("/api/mode")
 async def set_mode(body: dict):
-    want = str(body.get("mode", "paper")).lower()
-    if want == "live" and runner.mode != "live":
-        return JSONResponse(status_code=400, content={
-            "error": "LIVE trading needs the Gateway on the IP-whitelisted VPS. "
-                     "Start the server with engine_mode=live once the Gateway is "
-                     "connected; this demo runs PAPER on the simulated market."})
-    runner.cfg["mode"] = want
-    return {"mode": runner.cfg["mode"]}
+    """Toggle PAPER<->LIVE. LIVE requires {"mode":"live","confirm":"LIVE"} and a
+    connected Gateway; swaps the broker at runtime."""
+    res = runner.set_mode(str(body.get("mode", "paper")), str(body.get("confirm", "")))
+    if "error" in res:
+        return JSONResponse(status_code=400, content=res)
+    return res
 
 
 # ---------------- static (the built cockpit) — mounted last ----------------

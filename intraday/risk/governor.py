@@ -37,12 +37,55 @@ class Governor:
     def __init__(self, cfg: dict):
         self.cfg = cfg or {}
 
+    # ---------- capital ----------
+    def budget(self) -> float:
+        return float(self.cfg.get("total_budget")
+                     or self.cfg.get("equity_rupees", 100000.0))
+
+    def deployed_premium(self, open_positions) -> float:
+        """₹ currently committed as option premium across open longs (the budget
+        utilisation numerator; premium paid is the capital at work)."""
+        return sum(max(getattr(p, "entry_px", 0.0), 0.0) * getattr(p, "qty", 0)
+                   for p in (open_positions or []) if getattr(p, "is_long", True))
+
+    def utilisation_pct(self, open_positions) -> float:
+        b = self.budget()
+        return (self.deployed_premium(open_positions) / b * 100.0) if b > 0 else 0.0
+
+    def can_open_new(self, open_positions, extra_premium: float = 0.0) -> tuple[bool, str]:
+        """Block a NEW entry once projected budget utilisation hits the hard cap.
+        Averaging into an existing position may use the reserve; new entries may not."""
+        b = self.budget()
+        if b <= 0:
+            return False, "no budget configured"
+        hard = float(self.cfg.get("hard_cap_pct", 90.0))
+        projected = (self.deployed_premium(open_positions) + max(extra_premium, 0.0)) / b * 100.0
+        if projected >= hard:
+            return False, f"budget hard cap {hard:.0f}% (projected {projected:.0f}%)"
+        return True, "ok"
+
+    def cap_state(self, open_positions) -> str:
+        u = self.utilisation_pct(open_positions)
+        if u >= float(self.cfg.get("hard_cap_pct", 90.0)):
+            return "EXHAUSTED"
+        if u >= float(self.cfg.get("soft_cap_pct", 80.0)):
+            return "SOFT_CAP"
+        return "OK"
+
     # ---------- hard limits ----------
     def daily_loss_breached(self, realized_pnl_today: float,
                             unrealized_pnl: float = 0.0) -> bool:
-        """True → flatten everything and stop trading for the day (§2.1)."""
-        limit = float(self.cfg.get("max_daily_loss_rupees", 6000.0))
-        return (realized_pnl_today + unrealized_pnl) <= -abs(limit)
+        """True → flatten everything and stop trading for the day (§2.1).
+        Trips on the absolute ₹ daily-loss limit OR the global MTM stop
+        (global_sl_pct of budget), whichever is hit first."""
+        session = realized_pnl_today + unrealized_pnl
+        abs_limit = float(self.cfg.get("max_daily_loss_rupees", 6000.0))
+        if session <= -abs(abs_limit):
+            return True
+        gsl = float(self.cfg.get("global_sl_pct", 0.0))
+        if gsl > 0 and session <= -abs(gsl / 100.0 * self.budget()):
+            return True
+        return False
 
     def drawdown_scalar(self, equity_curve: list[float]) -> float:
         """Throttle risk as the session drawdown from peak deepens."""

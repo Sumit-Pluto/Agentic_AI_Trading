@@ -44,8 +44,17 @@ class SessionLoop:
         self.positions: list[Position] = []
         self.equity_curve: list[float] = []
         self.halted = False
-        self.equity = float(self.cfg.get("equity_rupees", 200000.0))
+        self.equity = self.governor.budget()          # capital base = total_budget
+        self.funds_provider = None                    # set by the runner in LIVE mode -> /api/funds dict
         self.last_scan: dict = {}      # last scan for the UI (regime, signals, agent rows)
+        self._flatten_request = False  # kill-switch / stop-square-off (serviced on the engine thread)
+        self._flatten_reason = ""
+
+    def set_broker(self, broker) -> None:
+        """Swap the execution broker (PAPER<->LIVE) at runtime; rebuilds the
+        order manager around it. Called by the runner on a mode toggle."""
+        self.broker = broker
+        self.orders = OrderManager(broker, self.store, self.rules, self.cfg)
 
     # ---------- helpers ----------
     def _paused(self) -> bool:
@@ -78,8 +87,21 @@ class SessionLoop:
         return market_session(now)["open"] and not self.ctx.is_square_off(now)
 
     # ---------- one iteration ----------
+    def request_flatten(self, reason: str = "flatten", halt: bool = False) -> None:
+        """Thread-safe request to flatten all positions on the next engine tick
+        (kill switch / stop-with-square-off). Serviced on the engine thread to
+        avoid racing the loop's own position mutations."""
+        self._flatten_request = True
+        self._flatten_reason = reason
+        if halt:
+            self.halted = True
+
     def step(self, now: dt.datetime | None = None) -> dict:
         now = now or self.ctx.now()
+        self.equity = self.governor.budget()          # pick up live budget edits
+        if self._flatten_request:
+            self._flatten_all(now, self._flatten_reason or "flatten")
+            self._flatten_request = False
         realized_before = self.store.realized_pnl_today(now.date())
 
         # 1. manage exits
@@ -253,6 +275,22 @@ class SessionLoop:
                                   equity_curve=self.equity_curve)
         if not size.ok:
             return False
+
+        # budget hard-cap: refuse a new entry that would over-deploy the budget
+        entry_prem = float(inst.get("ask") or inst.get("entry_prem") or 0.0)
+        ok_cap, _why = self.governor.can_open_new(self.positions, extra_premium=entry_prem * size.qty)
+        if not ok_cap:
+            return False
+        # shared-account margin gate (LIVE only): never trip a broker square-off
+        if str(self.cfg.get("mode", "paper")).lower() == "live" and self.funds_provider:
+            try:
+                funds = self.funds_provider()
+            except Exception:
+                funds = None
+            safety = float(self.cfg.get("margin_safety_factor", 1.10))
+            if funds and not self.governor.margin_ok(funds, entry_prem * size.qty * safety):
+                return False
+
         intent = OrderIntent(symbol=inst["tsym"], side="BUY", qty=size.qty,
                              order_type="MARKETABLE_LIMIT", limit_px=inst.get("ask") or inst.get("entry_prem"),
                              reason=f"entry:{sig.symbol} {sig.direction}"[:60],

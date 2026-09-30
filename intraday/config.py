@@ -29,16 +29,21 @@ DEFAULTS: dict = {
     "square_off_time_expiry": "15:10",
     "warmup_lookback_minutes": 1500,           # seed bars from /api/candles at start
 
-    # ── money & risk (PDF §2.1) ───────────────────────────────────────────
-    "equity_rupees": 200000.0,                 # working capital (overridden by /api/funds live)
-    "risk_per_trade_pct": 1.0,                 # % of equity risked per trade
-    "max_daily_loss_rupees": 6000.0,           # hard kill: flatten + halt for the day
+    # ── money & risk / capital allocation (PDF §2.1; mirrors swing swager) ──
+    "total_budget": 100000.0,                  # ₹ this AI system may deploy of the account (self-cap)
+    "soft_cap_pct": 80.0,                      # yellow warning at this budget utilisation
+    "hard_cap_pct": 90.0,                      # block NEW entries at/above this utilisation
+    "global_sl_pct": 5.0,                      # session MTM stop as % of budget -> flatten + halt
+    "risk_per_trade_pct": 1.0,                 # % of budget risked per trade
+    "max_daily_loss_rupees": 6000.0,           # absolute daily-loss kill (in addition to global_sl_pct)
     "max_positions": 4,
     "max_lots_per_symbol": 10,
-    "max_premium_pct_of_equity": 25.0,         # cap total premium outlay
-    "max_margin_utilisation_pct": 60.0,        # block entries above this margin use
+    "max_premium_pct_of_equity": 25.0,         # cap total premium outlay per trade
+    "max_margin_utilisation_pct": 60.0,        # block entries above this account-margin use
+    "margin_safety_factor": 1.10,              # require free margin >= required * this (shared account)
     "atr_stop_mult": 1.5,                      # stop distance floor = mult * ATR(5m)
     "max_prem_loss_pct": 40.0,                 # secondary premium stop for long options
+    "equity_rupees": 100000.0,                 # legacy alias; total_budget takes precedence
 
     # ── exits (I0–I8) ─────────────────────────────────────────────────────
     "target_r_1": 1.0, "partial_pct_1": 50.0,  # T1: book 50% at +1R, move to breakeven
