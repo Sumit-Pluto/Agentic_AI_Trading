@@ -65,10 +65,18 @@ class EngineRunner:
             return None
 
     def _make_ctx(self):
-        if self.engine_mode == "live" and self.client is not None:
+        if self.engine_mode == "live":
+            # LIVE = REAL data only. Never silently fall back to the simulator —
+            # if the gateway client is missing, fail loudly so no dummy data is
+            # ever served on a live/production deployment.
+            if self.client is None:
+                raise RuntimeError(
+                    "engine_mode=live but no Gateway client (set GATEWAY_CLIENT_ID / "
+                    "GATEWAY_CLIENT_SECRET). Refusing to fall back to the simulated "
+                    "market — live runs on REAL gateway data only.")
             from ..data.chains_db import GatewayChainsContext
             return GatewayChainsContext(self.client, self.cfg)
-        from ..data.sim import SimContext
+        from ..data.sim import SimContext      # sim is for local/offline testing only
         return SimContext(self.cfg)
 
     def _make_broker(self, mode: str):
@@ -166,6 +174,8 @@ class EngineRunner:
             "seq": self._seq,
             "state": {
                 "mode": self.mode, "trading_mode": trading_mode,
+                "data_source": type(self.ctx).__name__,   # GatewayChainsContext=real | SimContext=sim
+                "live_data": self.engine_mode == "live",
                 "paused": bool(self.cfg.get("paused", False)),
                 "halted": self.loop.halted, "now": now.isoformat(),
                 "square_off": self.ctx.is_square_off(now),

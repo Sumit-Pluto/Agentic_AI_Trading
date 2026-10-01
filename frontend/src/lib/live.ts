@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 // ---- snapshot types (mirror intraday/server/runner._snapshot) ----
 export interface Regime { on?: boolean; scalar?: number; detail?: string; vetoes?: string[]; avg?: number }
 export interface EngineState {
-  mode?: string; trading_mode?: string; cap_state?: string
+  mode?: string; trading_mode?: string; cap_state?: string; data_source?: string; live_data?: boolean
   paused?: boolean; halted?: boolean; now?: string; square_off?: boolean
   equity?: number | null; realized?: number | null; unrealized?: number | null
   day_pnl?: number | null; n_positions?: number; entries?: number; vix?: number | null; regime?: Regime
@@ -117,7 +117,9 @@ export function num(n: number | null | undefined, dp = 2): string {
   return n.toFixed(dp)
 }
 export function hhmm(iso?: string): string {
+  // server timestamps are IST-aware (…T16:58:22+05:30). Show the wall-clock HH:MM
+  // AS-IS — do NOT new Date().toISOString() (that converts to UTC and shows 11:28).
   if (!iso) return '—'
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? iso.slice(11, 16) : d.toISOString().slice(11, 16)
+  const m = /T(\d{2}:\d{2})/.exec(iso)
+  return m ? m[1] : iso.slice(0, 5)
 }

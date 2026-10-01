@@ -1,4 +1,4 @@
-import { apiPost, inr, pnlClass, signed, type Snapshot } from '../lib/live'
+import { apiPost, hhmm, inr, pnlClass, signed, type Snapshot } from '../lib/live'
 
 export function Header({ snap, connected }: { snap: Snapshot | null; connected: boolean }) {
   const st = snap?.state
@@ -30,10 +30,15 @@ export function Header({ snap, connected }: { snap: Snapshot | null; connected: 
     <header className="card" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 800, letterSpacing: 0.5 }}>◆ INTRADAY&nbsp;AGENTIC</div>
-        <span className="pill mono">{new Date(st?.now || Date.now()).toISOString().slice(11, 16)} IST</span>
+        <span className="pill mono">{hhmm(st?.now)} IST</span>
         <span className="pill" style={{ borderColor: live ? 'var(--red)' : 'var(--green)',
           color: live ? 'var(--red)' : 'var(--green)', fontWeight: 800 }}>
-          {live ? '● REAL MONEY' : '🧪 PAPER'}{st?.mode ? ` · ${String(st.mode).toUpperCase()}` : ''}
+          {live ? '● REAL MONEY' : '🧪 PAPER'}
+        </span>
+        <span className="pill" title={`data source: ${st?.data_source || '—'}`}
+          style={{ borderColor: st?.live_data ? 'var(--green)' : 'var(--amber)',
+            color: st?.live_data ? 'var(--green)' : 'var(--amber)' }}>
+          {st?.live_data ? 'LIVE DATA' : 'SIM DATA'}
         </span>
         <span className="pill" style={{ borderColor: regimeOn ? 'var(--green)' : 'var(--red)',
           color: regimeOn ? 'var(--green)' : 'var(--red)' }}>
