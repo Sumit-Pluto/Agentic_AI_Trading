@@ -4,7 +4,7 @@ The server already runs the **Gateway** (`gw-central`, :8000), **snowball** (:80
 **swing swager** (:8020) and **OptionSmith**, all on ONE real-money Shoonya account.
 This app coexists safely: it **reads OptionSmith's `chains.db`** for option chains
 (never runs its own OI sweep) and polls `/api/candles` for bars. It runs its own
-port (**:8030**), own venv, own DB, own service identity. **Deploy PAPER-first.**
+port (**:8040**), own venv, own DB, own service identity. **Deploy PAPER-first.**
 
 ## 1. Get the code
 ```bash
@@ -75,7 +75,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ai-intraday
 sudo journalctl -u ai-intraday -f          # watch it boot
 ```
-Open **http://<server>:8030** → the cockpit. It runs **PAPER on live data**.
+Open **http://<server>:8040** → the cockpit. It runs **PAPER on live data**.
 
 ## 8. Go LIVE (real money) — only when satisfied
 In the cockpit header: **Go LIVE** → type `LIVE` to confirm. This swaps to the
