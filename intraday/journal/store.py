@@ -16,8 +16,13 @@ import sqlite3
 import time
 from pathlib import Path
 
-DB_FP = Path(os.environ.get(
-    "INTRADAY_DB", Path(__file__).resolve().parents[1] / "state" / "intraday.db"))
+def _db_path(fp=None) -> Path:
+    """Resolve the DB path at call time so a later INTRADAY_DB is honoured."""
+    return Path(fp or os.environ.get("INTRADAY_DB")
+                or (Path(__file__).resolve().parents[1] / "state" / "intraday.db"))
+
+
+DB_FP = _db_path()   # back-compat module attribute
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals(
@@ -73,7 +78,8 @@ CREATE TABLE IF NOT EXISTS jobs(
 
 
 class Store:
-    def __init__(self, fp: Path | str = DB_FP):
+    def __init__(self, fp: Path | str | None = None):
+        fp = _db_path(fp)
         Path(fp).parent.mkdir(parents=True, exist_ok=True)
         self.cx = sqlite3.connect(str(fp), check_same_thread=False)
         self.cx.execute("PRAGMA journal_mode=WAL")

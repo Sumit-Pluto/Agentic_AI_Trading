@@ -11,8 +11,17 @@ import os
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent
-CONFIG_FP = Path(os.environ.get(
-    "INTRADAY_CONFIG", _ROOT / "state" / "intraday_config.json"))
+
+
+def _config_path(fp: "str | Path | None" = None) -> Path:
+    """Resolve the config path AT CALL TIME (not frozen at import), so a later
+    INTRADAY_CONFIG (systemd EnvironmentFile, dotenv, tests) is always honoured."""
+    return Path(fp or os.environ.get("INTRADAY_CONFIG")
+                or (_ROOT / "state" / "intraday_config.json"))
+
+
+# back-compat module attribute (dynamic callers should use _config_path())
+CONFIG_FP = _config_path()
 
 DEFAULTS: dict = {
     # ── universe / session ────────────────────────────────────────────────
@@ -90,7 +99,7 @@ def _deep_merge(base: dict, over: dict) -> dict:
 
 def load(fp: Path | str | None = None) -> dict:
     """Defaults with the on-disk overrides merged in (missing keys fall back)."""
-    path = Path(fp or CONFIG_FP)
+    path = _config_path(fp)
     if not path.exists():
         return dict(DEFAULTS)
     try:
@@ -101,7 +110,7 @@ def load(fp: Path | str | None = None) -> dict:
 
 
 def save(cfg: dict, fp: Path | str | None = None) -> None:
-    path = Path(fp or CONFIG_FP)
+    path = _config_path(fp)
     path.parent.mkdir(parents=True, exist_ok=True)
     # persist only the diff vs defaults, so new defaults propagate automatically
     diff = {k: v for k, v in (cfg or {}).items()
