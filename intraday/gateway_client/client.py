@@ -144,6 +144,11 @@ class GatewayClient:
     def quote(self, exchange: str, token: str) -> dict:
         return self._request("GET", "/api/quote", params={"exchange": exchange, "token": token})
 
+    def search(self, query: str, exchange: str = "") -> list[dict]:
+        """Resolve a symbol to {exch, token, tsym} via the Gateway scripmaster."""
+        r = self._request("GET", "/api/search", params={"exchange": exchange, "q": query})
+        return r.get("results", []) if isinstance(r, dict) else (r or [])
+
     def option_chain(self, symbol: str, exchange: str = "NSE", *, expiry: str = "",
                      atm: float = 0.0, count: int = 15, use_cache: bool = True) -> dict:
         return self._request("POST", "/api/option-chain", json={

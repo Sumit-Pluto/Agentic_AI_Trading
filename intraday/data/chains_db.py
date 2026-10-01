@@ -173,6 +173,10 @@ class GatewayChainsContext(IntradayContext):
         return {"d_pcr": d_pcr}
 
     # ---- underlying bars via /api/candles (REST, not the contended socket) ----
+    # standard NSE index tokens (candles use these; indices aren't in the equity search)
+    _INDEX_TOKENS = {"NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"),
+                     "FINNIFTY": ("NSE", "26037"), "MIDCPNIFTY": ("NSE", "26074")}
+
     def _resolve_token(self, symbol: str) -> tuple[str, str] | None:
         if symbol in self._tok:
             return self._tok[symbol]
@@ -181,15 +185,17 @@ class GatewayChainsContext(IntradayContext):
             exch, token = str(m).split("|", 1)
             self._tok[symbol] = (exch, token)
             return self._tok[symbol]
-        # resolve via Gateway search: prefer the index, else the NSE equity
+        if symbol in self._INDEX_TOKENS:
+            self._tok[symbol] = self._INDEX_TOKENS[symbol]
+            return self._tok[symbol]
+        # stock: resolve the NSE cash equity ({SYM}-EQ) via the Gateway scripmaster
         try:
-            q = symbol if symbol in ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") else f"{symbol}-EQ"
-            res = self.client.search(q, exchange="NSE") if hasattr(self.client, "search") else []
+            res = self.client.search(f"{symbol}-EQ", exchange="NSE") if hasattr(self.client, "search") else []
         except Exception:
             res = []
         for r in (res or []):
-            tok = str(r.get("token") or "")
-            if tok:
+            tok, tsym = str(r.get("token") or ""), str(r.get("tsym") or "")
+            if tok and (tsym.upper() == f"{symbol}-EQ" or tsym.upper().startswith(symbol)):
                 self._tok[symbol] = (r.get("exch", "NSE"), tok)
                 return self._tok[symbol]
         return None
