@@ -247,20 +247,42 @@ class GatewayChainsContext(IntradayContext):
         return val
 
     def prev_day(self, symbol: str) -> dict:
+        """Previous-day high/low/close/open. The gateway's DAILY series returns
+        nothing for these tokens, so we derive the prior session's levels from
+        the INTRADAY 5-min candles (a 3-day window), grouping by date."""
         if symbol in self._prevday:
             return self._prevday[symbol]
         tok = self._resolve_token(symbol)
         if not tok:
             return {}
         try:
-            res = self.client.candles(tok[0], tok[1], daily=True, days=5,
-                                      tradingsymbol=symbol)
+            res = self.client.candles(tok[0], tok[1], interval=self._tf_min,
+                                      lookback_minutes=3 * 24 * 60)
             candles = res.get("candles", []) if isinstance(res, dict) else res
         except Exception:
             candles = []
-        # last COMPLETED day = second-to-last daily bar (today's is forming)
-        if len(candles) >= 2:
-            d = candles[-2]
-            self._prevday[symbol] = {"pdh": float(d["high"]), "pdl": float(d["low"]),
-                                     "pdc": float(d["close"]), "pdo": float(d["open"])}
-        return self._prevday.get(symbol, {})
+        by_date: dict[str, list] = {}
+        for c in candles:                       # candles are oldest-first
+            t = str(c.get("time", ""))
+            d = t.split(" ")[0] if " " in t else t[:10]
+            if d:
+                by_date.setdefault(d, []).append(c)
+        today = ist_now().strftime("%d-%m-%Y")
+        prior = [d for d in by_date if d != today]
+        if not prior:
+            return {}
+
+        def _key(s):
+            try:
+                return dt.datetime.strptime(s, "%d-%m-%Y")
+            except ValueError:
+                return dt.datetime.min
+        day = by_date[max(prior, key=_key)]
+        try:
+            self._prevday[symbol] = {
+                "pdh": max(float(x["high"]) for x in day),
+                "pdl": min(float(x["low"]) for x in day),
+                "pdc": float(day[-1]["close"]), "pdo": float(day[0]["open"])}
+        except (KeyError, ValueError):
+            return {}
+        return self._prevday[symbol]
