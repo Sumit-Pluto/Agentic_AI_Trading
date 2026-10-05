@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { inr, num, pnlClass, signed, type Position, type Signal, type Snapshot } from '../lib/live'
 
 export function Cockpit({ snap, equity }: { snap: Snapshot | null; equity: { t: string; equity: number }[] }) {
@@ -72,19 +73,131 @@ export function Cockpit({ snap, equity }: { snap: Snapshot | null; equity: { t: 
   )
 }
 
+function useNow(step = 500) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), step)
+    return () => clearInterval(id)
+  }, [step])
+  return now
+}
+
+function hhmmss(iso?: string): string {
+  if (!iso) return '—'
+  const m = /T(\d{2}:\d{2}:\d{2})/.exec(iso)
+  return m ? m[1] : iso.slice(0, 8)
+}
+
+function ageStr(ts: string | undefined, now: number): string {
+  if (!ts) return '—'
+  const ms = now - new Date(ts).getTime()
+  if (!isFinite(ms) || ms < 0) return '—'
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s ago`
+  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s ago`
+}
+
 function SignalRow({ s }: { s: Signal }) {
   const buy = s.direction === 'BUY'
-  const inst = s.instrument as { tsym?: string; strike?: number; right?: string; win_prob?: number } | null
+  const [open, setOpen] = useState(false)
+  const now = useNow()
+  const inst = s.instrument
   const wp = inst?.win_prob
+  const fams = Object.entries(s.family_scores ?? {})
   return (
-    <div className="flash" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-      <span className="pill" style={{ color: buy ? 'var(--green)' : 'var(--red)', borderColor: buy ? 'var(--green)' : 'var(--red)' }}>{s.direction}</span>
-      <b>{s.symbol}</b>
-      <span className="mono dim">{inst?.tsym ?? `${inst?.strike ?? ''}${inst?.right ?? ''}`}</span>
-      <div style={{ flex: 1 }} />
-      {wp != null && <span className="pill mono" title="trained-model win probability"
-        style={{ color: wp >= 0.5 ? 'var(--green)' : 'var(--amber)' }}>P {Math.round(wp * 100)}%</span>}
-      <span className="mono">B {num(s.score_buy, 0)} / S {num(s.score_sell, 0)}</span>
+    <div className="flash" style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+      <div onClick={() => setOpen(!open)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+        title="click for the full signal card">
+        <span className="dim mono">{open ? '▾' : '▸'}</span>
+        <span className="pill" style={{ color: buy ? 'var(--green)' : 'var(--red)', borderColor: buy ? 'var(--green)' : 'var(--red)' }}>{s.direction}</span>
+        <b>{s.symbol}</b>
+        <span className="mono dim">{inst?.tsym ?? `${inst?.strike ?? ''}${inst?.right ?? ''}`}</span>
+        <div style={{ flex: 1 }} />
+        <span className="mono dim" title={`fired at ${s.ts} IST`}>{hhmmss(s.ts)} · {ageStr(s.ts, now)}</span>
+        {s.scan_ms != null && <span className="mono dim" title="agent-scan compute time">scan {num(s.scan_ms, 0)}ms</span>}
+        {wp != null && <span className="pill mono" title="trained-model win probability"
+          style={{ color: wp >= 0.5 ? 'var(--green)' : 'var(--amber)' }}>P {Math.round(wp * 100)}%</span>}
+        <span className="mono">B {num(s.score_buy, 0)} / S {num(s.score_sell, 0)}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 10, paddingLeft: 22 }}>
+          <div className="mono" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12 }}>
+            <span title="fired-side composite">score <b>{num(s.composite ?? (buy ? s.score_buy : s.score_sell), 1)}</b></span>
+            <span title="|buy − sell| anti-ambiguity margin">margin {num(s.margin, 1)}</span>
+            <span title="agents scored (of 25)">agents {s.n_scored ?? '—'}</span>
+            <span title="decision layer version">brain {s.brain_version ?? '—'}</span>
+            {(s.vetoes?.length ?? 0) > 0
+              ? <span style={{ color: 'var(--red)' }}>vetoes: {s.vetoes!.join('; ')}</span>
+              : <span className="dim">no vetoes</span>}
+          </div>
+          {fams.length > 0 && (
+            <div>
+              <div className="faint" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+                Family scores ({buy ? 'BUY' : 'SELL'} side)
+              </div>
+              {fams.map(([f, v]) => (
+                <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <span className="mono dim" style={{ width: 14 }}>{f}</span>
+                  <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 3 }}>
+                    <div style={{ width: `${Math.max(0, Math.min(100, v))}%`, height: '100%', borderRadius: 3,
+                      background: buy ? 'var(--green)' : 'var(--red)' }} />
+                  </div>
+                  <span className="mono" style={{ width: 36, textAlign: 'right' }}>{num(v, 0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {inst && (
+            <div>
+              <div className="faint" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>Instrument</div>
+              <div className="mono" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: '2px 12px', fontSize: 12 }}>
+                <span className="dim">vehicle <b style={{ color: 'var(--fg)' }}>{inst.kind ?? 'OPT'}</b></span>
+                <span className="dim">strike <b style={{ color: 'var(--fg)' }}>{inst.strike ?? '—'} {inst.right ?? ''}</b></span>
+                <span className="dim">expiry <b style={{ color: 'var(--fg)' }}>{inst.expiry ?? '—'}</b></span>
+                <span className="dim">lot <b style={{ color: 'var(--fg)' }}>{inst.lot_size ?? '—'}</b></span>
+                <span className="dim">entry <b style={{ color: 'var(--fg)' }}>{num(inst.entry_prem ?? inst.ask)}</b></span>
+                <span className="dim">bid/ask <b style={{ color: 'var(--fg)' }}>{num(inst.bid)}/{num(inst.ask)}</b></span>
+                <span className="dim">delta <b style={{ color: 'var(--fg)' }}>{num(inst.delta)}</b></span>
+                <span className="dim">IV <b style={{ color: 'var(--fg)' }}>{inst.iv != null ? `${num(inst.iv * 100, 1)}%` : '—'}</b></span>
+                <span className="dim">route <b style={{ color: 'var(--fg)' }}>{inst.exch ?? '—'}:{inst.token || '—'}</b></span>
+                <span className="dim">strategy <b style={{ color: 'var(--fg)' }}>{inst.strategy ?? 'default'}</b></span>
+              </div>
+              {inst.selector_reason && <div className="dim mono" style={{ fontSize: 11, marginTop: 2 }}>why {inst.kind ?? 'OPT'}: {inst.selector_reason}</div>}
+            </div>
+          )}
+          {s.regime && (
+            <div className="mono dim" style={{ fontSize: 12 }}>
+              regime {s.regime.on === false ? <b style={{ color: 'var(--red)' }}>OFF</b> : <b style={{ color: 'var(--green)' }}>ON</b>}
+              {s.regime.avg != null && <> · avg {num(s.regime.avg, 0)}</>}
+              {s.regime.scalar != null && <> · size ×{num(s.regime.scalar, 2)}</>}
+              {s.regime.detail && <> · {s.regime.detail}</>}
+              {(s.regime.vetoes?.length ?? 0) > 0 && <> · vetoes: {s.regime.vetoes!.join('; ')}</>}
+            </div>
+          )}
+          {(s.agents?.length ?? 0) > 0 && (
+            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+              <table>
+                <thead><tr><th>Agent</th><th>Fam</th><th>B</th><th>S</th><th>N/A · veto · detail</th></tr></thead>
+                <tbody>
+                  {s.agents!.map((a, i) => (
+                    <tr key={i}>
+                      <td className="mono">{a.agent}</td>
+                      <td className="mono dim">{a.family}</td>
+                      <td className="mono">{a.buy ?? '—'}</td>
+                      <td className="mono">{a.sell ?? '—'}</td>
+                      <td className="dim" style={{ fontSize: 11 }}>
+                        {[a.na && `N/A: ${a.na}`, a.veto && `VETO: ${a.veto}`,
+                          a.veto_long && `no-long: ${a.veto_long}`, a.veto_short && `no-short: ${a.veto_short}`,
+                          a.detail].filter(Boolean).join(' · ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

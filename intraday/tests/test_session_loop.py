@@ -288,6 +288,28 @@ def test_halt_resets_on_new_trading_day(tmp_path):
     store.close()
 
 
+def test_signal_view_carries_full_card(tmp_path):
+    store = Store(tmp_path / "sv.db")
+    loop = SessionLoop(ReplayContext(), store, CFG, brain=Brain.equal())
+    assert loop.step()["entries"] == 1
+    views = loop.last_scan["signals"]
+    assert len(views) == 1
+    v = views[0]
+    for k in ("ts", "symbol", "direction", "score_buy", "score_sell",
+              "composite", "margin", "scan_ms", "family_scores", "vetoes",
+              "n_scored", "regime", "brain_version", "instrument", "agents"):
+        assert k in v, k
+    assert v["composite"] == max(v["score_buy"], v["score_sell"])
+    assert abs(v["margin"] - abs(v["score_buy"] - v["score_sell"])) < 0.11
+    assert v["scan_ms"] is not None and v["scan_ms"] >= 0
+    assert v["regime"]["on"] is True and v["n_scored"] > 0
+    assert v["n_scored"] <= len(v["agents"]) > 0
+    assert all(a.get("agent") and a.get("family") for a in v["agents"])
+    assert v["instrument"]["right"] == "CE"
+    assert loop.last_scan["scan_ms"] == v["scan_ms"]
+    store.close()
+
+
 def test_scan_runs_at_cadence_not_every_tick(tmp_path):
     store = Store(tmp_path / "cg.db")
     ctx = ReplayContext()                       # frozen clock

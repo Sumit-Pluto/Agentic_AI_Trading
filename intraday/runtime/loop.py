@@ -173,11 +173,14 @@ class SessionLoop:
         regime = ((self.last_scan or {}).get("regime") or {"on": False})
         if do_scan:
             try:
+                t0 = time.perf_counter()
                 signals, regime, rows = self.scanner.scan()
+                scan_ms = (time.perf_counter() - t0) * 1000.0
                 self._last_scan_at = now
-                views = [self._signal_view(s) for s in signals]
+                views = [self._signal_view(s, scan_ms) for s in signals]
                 self.last_scan = {"ts": now.isoformat(), "regime": regime,
-                                  "rows": rows, "signals": views}
+                                  "rows": rows, "signals": views,
+                                  "scan_ms": round(scan_ms, 1)}
                 prog = getattr(self.scanner, "progress", []) or []
                 n_bars = sum(1 for p in prog if p.get("bars"))
                 n_chains = sum(1 for p in prog if p.get("chain"))
@@ -351,11 +354,37 @@ class SessionLoop:
 
     # ---------- entries ----------
     @staticmethod
-    def _signal_view(s) -> dict:
+    def _signal_view(s, scan_ms: float | None = None) -> dict:
+        """Full signal card for the cockpit: occurrence time, both scores and
+        their margin, the fired side's family breakdown, vetoes, regime, the
+        complete instrument, and the compact per-agent ballot behind it."""
+        buy = float(s.score_buy or 0.0)
+        sell = float(s.score_sell or 0.0)
+        agents = []
+        for r in (s.agent_rows or []):
+            if not isinstance(r, dict):
+                continue
+            agents.append({
+                "agent": r.get("agent"), "family": r.get("family"),
+                "buy": (round(r["score_buy"], 1) if r.get("score_buy") is not None else None),
+                "sell": (round(r["score_sell"], 1) if r.get("score_sell") is not None else None),
+                "na": r.get("na"), "veto": r.get("veto"),
+                "veto_long": r.get("veto_long"), "veto_short": r.get("veto_short"),
+                "detail": (str(r.get("detail") or "")[:160])})
+        reg = s.regime or {}
         return {"ts": s.ts.isoformat(), "symbol": s.symbol, "direction": s.direction,
-                "score_buy": round(s.score_buy, 1), "score_sell": round(s.score_sell, 1),
+                "score_buy": round(buy, 1), "score_sell": round(sell, 1),
+                "composite": round(max(buy, sell), 1),
+                "margin": round(abs(buy - sell), 1),
+                "scan_ms": (round(scan_ms, 1) if scan_ms is not None else None),
                 "family_scores": {k: round(v, 1) for k, v in (s.family_scores or {}).items()},
-                "instrument": s.instrument}
+                "vetoes": list(s.vetoes or []), "n_scored": s.n_scored,
+                "regime": {"on": reg.get("on"), "scalar": reg.get("scalar"),
+                           "avg": reg.get("avg"), "detail": reg.get("detail"),
+                           "vetoes": list(reg.get("vetoes") or [])},
+                "brain_version": s.brain_version,
+                "instrument": s.instrument,
+                "agents": agents}
 
     def _bars_since_managed(self, pos: Position, now: dt.datetime) -> float:
         """Wall-clock bars held since entry, minus what is already aged — so

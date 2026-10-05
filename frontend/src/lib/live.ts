@@ -17,9 +17,27 @@ export interface Position {
   qty: number; lots: number; entry_px: number | null; mark: number | null; pnl: number | null
   stop: number | null; age_bars: number; strategy: string; entry_ts: string
 }
+export interface SignalInstrument {
+  kind?: string; tsym?: string; token?: string; exch?: string
+  strike?: number; right?: string; expiry?: string; lot_size?: number
+  entry_prem?: number | null; bid?: number | null; ask?: number | null
+  delta?: number | null; iv?: number | null; fut_px?: number | null
+  strategy?: string; selector_reason?: string; win_prob?: number
+}
+export interface SignalAgent {
+  agent?: string; family?: string; buy?: number | null; sell?: number | null
+  na?: string | null; veto?: string | null
+  veto_long?: string | null; veto_short?: string | null; detail?: string
+}
+export interface SignalRegime {
+  on?: boolean; scalar?: number; avg?: number; detail?: string; vetoes?: string[]
+}
 export interface Signal {
   ts: string; symbol: string; direction: string; score_buy: number; score_sell: number
-  family_scores: Record<string, number>; instrument: Record<string, unknown> | null
+  composite?: number; margin?: number; scan_ms?: number | null
+  family_scores: Record<string, number>; instrument: SignalInstrument | null
+  vetoes?: string[]; n_scored?: number; regime?: SignalRegime
+  brain_version?: string; agents?: SignalAgent[]
 }
 export interface AgentRow {
   symbol: string; agent: string; family: string; score_buy: number | null; score_sell: number | null

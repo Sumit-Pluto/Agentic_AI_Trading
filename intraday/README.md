@@ -54,7 +54,7 @@ Intelligence→`agents`+`intelligence`, §2.5 Learning→`journal`+`training`,
 ## Test (offline, no broker)
 
 ```bash
-python -m pytest intraday/tests -q      # 78 pass: greeks/chain pipeline, paper flow,
+python -m pytest intraday/tests -q      # 79 pass: greeks/chain pipeline, paper flow,
                                         # all 25 agents, scanner, governor/rules/exits,
                                         # full session loop (entry→exit, square-off,
                                         # daily-loss halt), FUT-vs-OPT routing, live
