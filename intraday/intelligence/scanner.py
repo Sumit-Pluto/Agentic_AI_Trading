@@ -180,8 +180,13 @@ class Scanner:
             except Exception:
                 chain = None
             instrument = select_instrument(chain, direction, cfg)
+            try:
+                instrument = self._select_vehicle(sym, direction, sc, chain,
+                                                  instrument, regime)
+            except Exception:
+                pass                            # selector never kills a signal on error
             if instrument is None:
-                continue                        # no tradable leg — skip
+                continue                        # no tradable vehicle — skip
             signals.append(Signal(
                 ts=now, symbol=sym, direction=direction,
                 score_buy=sc.get("score_buy") or 0.0, score_sell=sc.get("score_sell") or 0.0,
@@ -190,6 +195,76 @@ class Scanner:
                 vetoes=sc.get("vetoes", []), n_scored=sc.get("n_scored", 0),
                 regime=regime, brain_version=self.brain.version, instrument=instrument))
         return signals, regime, all_rows
+
+    def _select_vehicle(self, sym: str, direction: str, sc: dict,
+                        chain, opt_leg: dict | None, regime: dict) -> dict | None:
+        """FUT-vs-OPT routing for one firing candidate. Returns the instrument
+        to trade (option leg with kind=OPT, or synthesised FUT leg), or None
+        to skip. Never raises: falls back to the legacy option leg."""
+        from ..selector import select as selector_select
+        cfg = self.cfg
+        if opt_leg is not None and "kind" not in opt_leg:
+            opt_leg["kind"] = "OPT"
+        quote = greeks = None
+        if chain is not None and opt_leg is not None:
+            try:
+                is_call = str(opt_leg.get("right", "")).upper().startswith("C")
+                quote = chain.get(float(opt_leg.get("strike")), is_call)
+            except Exception:
+                quote = None
+            if quote is not None:
+                try:
+                    from ..options import greeks_for
+                    greeks = greeks_for(quote, chain)
+                except Exception:
+                    greeks = None
+        session: dict = {}
+        try:
+            session = _session_ctx(self.ctx.bars(sym), cfg)
+        except Exception:
+            session = {}
+        atr_pts = None
+        try:
+            from ..agents._ta import atr, last
+            b = self.ctx.bars(sym)
+            a = last(atr(b)) if b is not None else float("nan")
+            atr_pts = float(a) if a == a and a > 0 else None
+        except Exception:
+            atr_pts = None
+        ivp = None
+        try:
+            fn = getattr(self.ctx, "iv_percentile", None)
+            ivp = fn(sym) if callable(fn) else None
+        except Exception:
+            ivp = None
+        blackout = False
+        try:
+            fns = getattr(self.ctx, "event_blackout", None)
+            blackout = bool(fns(sym)) if callable(fns) else False
+        except Exception:
+            blackout = False
+        fut_quote = None
+        try:
+            fn = getattr(self.ctx, "future", None)
+            fut_quote = fn(sym) if callable(fn) else None
+        except Exception:
+            fut_quote = None
+        fam = (sc.get("family_buy") if direction == "BUY"
+               else sc.get("family_sell")) or {}
+
+        class _Sig:
+            pass
+        sig = _Sig()
+        sig.symbol, sig.direction = sym, direction
+        sig.family_scores, sig.regime = fam, regime
+        inst, _decision = selector_select(
+            signal=sig, chain=chain, quote=quote, greeks=greeks,
+            opt_leg=opt_leg, session=session, iv_percentile=ivp,
+            atr_pts=atr_pts, event_blackout=blackout,
+            futures_quote=fut_quote, cfg=cfg)
+        # None = SKIP (event veto, or no tradable vehicle) → drop the signal.
+        # (On *exception* the caller keeps the legacy leg; see scan().)
+        return inst
 
     @staticmethod
     def _row(symbol: str, r) -> dict:

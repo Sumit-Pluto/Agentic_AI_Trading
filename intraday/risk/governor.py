@@ -130,6 +130,34 @@ class Governor:
         cfg = self.cfg
         lot = int(instrument.get("lot_size") or (chain.lot_size if chain else 0) or 0)
         entry = float(instrument.get("entry_prem") or 0.0)
+        if str(instrument.get("kind", "OPT")).upper() == "FUT":
+            # Futures: delta-1 — risk/share IS the underlying stop distance.
+            if lot <= 0 or sl_pts <= 0:
+                return SizeResult(0, 0, 0.0, 0.0, 0.0, reason="no lot size / stop")
+            risk_per_share = max(float(sl_pts), 0.01)
+            dd = self.drawdown_scalar(equity_curve or [])
+            budget = (equity * float(cfg.get("risk_per_trade_pct", 1.0)) / 100.0
+                      * dd * max(0.0, min(1.0, regime_scalar)))
+            lots = int(budget // (risk_per_share * lot)) if risk_per_share > 0 else 0
+            open_positions = open_positions or []
+            open_risk = sum(getattr(p, "risk_per_share", 0.0) * getattr(p, "qty", 0)
+                            for p in open_positions)
+            heat_cap_r = float(cfg.get("max_portfolio_heat_pct",
+                                       float(cfg.get("risk_per_trade_pct", 1.0)) * 3.0)) / 100.0 * equity
+            heat_room = max(heat_cap_r - open_risk, 0.0)
+            lots_heat = int(heat_room // (risk_per_share * lot)) if risk_per_share * lot > 0 else 0
+            lots_symcap = int(cfg.get("max_lots_per_symbol", 10))
+            final = max(0, min(lots, lots_heat, lots_symcap))
+            caps = {"risk_budget_lots": lots, "heat_cap_lots": lots_heat,
+                    "symbol_cap_lots": lots_symcap, "dd_scalar": dd,
+                    "regime_scalar": regime_scalar, "open_risk": round(open_risk, 0)}
+            binder = min((("risk", lots), ("heat", lots_heat),
+                          ("symbol", lots_symcap)), key=lambda kv: kv[1])[0]
+            return SizeResult(lots=final, qty=final * lot, risk_per_share=risk_per_share,
+                              stop_prem=(entry - risk_per_share if entry else 0.0),
+                              budget=budget, caps=caps,
+                              reason=(f"{final} FUT lots (binding: {binder})" if final
+                                      else "sized to zero (a cap or budget blocked it)"))
         if lot <= 0 or entry <= 0:
             return SizeResult(0, 0, 0.0, 0.0, 0.0, reason="no lot size / entry premium")
 

@@ -159,12 +159,17 @@ class SessionLoop:
 
     # ---------- exit management ----------
     def _manage_one(self, pos: Position, now: dt.datetime, square_off: bool) -> bool:
-        is_call = str(pos.right).upper().startswith("C")
-        q, ch = self._leg_quote(pos.underlying, pos.strike, is_call)
-        spot = ch.spot if ch else pos.entry_spot
-        bid = q.bid if q else 0.0
-        ask = q.ask if q else 0.0
-        mid = q.mid if q else pos.entry_px
+        if str(getattr(pos, "right", "")).upper() == "FUT":
+            mark = self._fut_mark(pos.underlying, pos.entry_px)
+            spot = mark
+            bid = ask = mid = mark
+        else:
+            is_call = str(pos.right).upper().startswith("C")
+            q, ch = self._leg_quote(pos.underlying, pos.strike, is_call)
+            spot = ch.spot if ch else pos.entry_spot
+            bid = q.bid if q else 0.0
+            ask = q.ask if q else 0.0
+            mid = q.mid if q else pos.entry_px
         vwap = None
         try:
             b = self.ctx.bars(pos.underlying)
@@ -210,9 +215,12 @@ class SessionLoop:
 
     def _flatten_all(self, now: dt.datetime, reason: str):
         for pos in list(self.positions):
-            is_call = str(pos.right).upper().startswith("C")
-            q, ch = self._leg_quote(pos.underlying, pos.strike, is_call)
-            px = (q.bid if q and pos.is_long else (q.ask if q else pos.entry_px)) or pos.entry_px
+            if str(getattr(pos, "right", "")).upper() == "FUT":
+                px = self._fut_mark(pos.underlying, pos.entry_px) or pos.entry_px
+            else:
+                is_call = str(pos.right).upper().startswith("C")
+                q, ch = self._leg_quote(pos.underlying, pos.strike, is_call)
+                px = (q.bid if q and pos.is_long else (q.ask if q else pos.entry_px)) or pos.entry_px
             self._exit_order(pos, pos.qty, px, now, reason)
             pos.exit_px, pos.exit_ts, pos.exit_reason = px, now, reason
             self.store.close_position(pos, self.brain.version)
@@ -221,6 +229,13 @@ class SessionLoop:
     def _unrealized(self, now: dt.datetime) -> float:
         tot = 0.0
         for pos in self.positions:
+            if str(getattr(pos, "right", "")).upper() == "FUT":
+                mark = self._fut_mark(pos.underlying, pos.entry_px)
+                if not mark:
+                    continue
+                sign = 1.0 if pos.is_long else -1.0
+                tot += sign * (mark - pos.entry_px) * pos.qty
+                continue
             is_call = str(pos.right).upper().startswith("C")
             q, _ = self._leg_quote(pos.underlying, pos.strike, is_call)
             if not q:
@@ -238,15 +253,34 @@ class SessionLoop:
                 "family_scores": {k: round(v, 1) for k, v in (s.family_scores or {}).items()},
                 "instrument": s.instrument}
 
+    def _fut_mark(self, symbol: str, fallback: float = 0.0) -> float:
+        """Current futures/underlying mark for FUT legs (live quote → spot)."""
+        try:
+            fn = getattr(self.ctx, "future", None)
+            fq = fn(symbol) if callable(fn) else None
+            px = float((fq or {}).get("px") or 0.0)
+            if px > 0:
+                return px
+        except Exception:
+            pass
+        try:
+            px = float(self.ctx.spot(symbol) or 0.0)
+            if px > 0:
+                return px
+        except Exception:
+            pass
+        return fallback
+
     def _enter(self, sig, regime: dict, now: dt.datetime) -> bool:
         inst = sig.instrument or {}
+        kind = str(inst.get("kind", "OPT")).upper()
         is_call = str(inst.get("right", "")).upper().startswith("C")
         ch = None
         try:
             ch = self.ctx.chain(sig.symbol)
         except Exception:
-            return False
-        if ch is None:
+            ch = None
+        if kind != "FUT" and ch is None:
             return False
 
         # trained-model probability filter (optional): the model can VETO or
@@ -267,7 +301,12 @@ class SessionLoop:
             if not self.model_filter.passes(prob):
                 return False
 
-        spot = ch.spot
+        if kind == "FUT":
+            spot = self._fut_mark(sig.symbol, float(inst.get("entry_prem") or 0.0))
+            if spot <= 0:
+                return False
+        else:
+            spot = ch.spot
         sl_pts = self._atr_pts(sig.symbol, spot)
         size = self.governor.size(instrument=inst, chain=ch, sl_pts=sl_pts,
                                   equity=self.equity, regime_scalar=regime.get("scalar", 1.0),
@@ -277,8 +316,11 @@ class SessionLoop:
             return False
 
         # budget hard-cap: refuse a new entry that would over-deploy the budget
+        # (options: premium outlay; futures: 1x stop-risk notional as the cap
+        # numerator so a FUT leg cannot bypass the utilisation guard).
         entry_prem = float(inst.get("ask") or inst.get("entry_prem") or 0.0)
-        ok_cap, _why = self.governor.can_open_new(self.positions, extra_premium=entry_prem * size.qty)
+        cap_extra = entry_prem * size.qty if kind != "FUT" else size.risk_per_share * size.qty
+        ok_cap, _why = self.governor.can_open_new(self.positions, extra_premium=cap_extra)
         if not ok_cap:
             return False
         # shared-account margin gate (LIVE only): never trip a broker square-off
@@ -288,16 +330,21 @@ class SessionLoop:
             except Exception:
                 funds = None
             safety = float(self.cfg.get("margin_safety_factor", 1.10))
-            if funds and not self.governor.margin_ok(funds, entry_prem * size.qty * safety):
+            if funds and not self.governor.margin_ok(funds, cap_extra * safety):
                 return False
 
+        if kind == "FUT":
+            expiry = ch.expiry if ch is not None else None
+            lot = int(inst.get("lot_size") or (ch.lot_size if ch is not None else 0) or 0)
+        else:
+            expiry, lot = ch.expiry, inst.get("lot_size", ch.lot_size)
         intent = OrderIntent(symbol=inst["tsym"], side="BUY", qty=size.qty,
                              order_type="MARKETABLE_LIMIT", limit_px=inst.get("ask") or inst.get("entry_prem"),
                              reason=f"entry:{sig.symbol} {sig.direction}"[:60],
                              signal_id=None, signal_ts=time.time(), exch=inst.get("exch", "NFO"),
                              token=inst.get("token", ""), underlying=sig.symbol,
-                             strike=inst["strike"], right=inst["right"],
-                             expiry=(ch.expiry), lot_size=inst.get("lot_size", ch.lot_size),
+                             strike=float(inst.get("strike") or 0.0), right=inst.get("right", ""),
+                             expiry=expiry, lot_size=lot,
                              strategy=sig.instrument.get("strategy", "default") if sig.instrument else "default")
         sid = self.store.save_signal(sig)
         intent.signal_id = sid
@@ -305,13 +352,18 @@ class SessionLoop:
                                  halted=self.halted, paused=self._paused())
         if res.status != "FILLED" or not res.fill_px:
             return False
-        stop = spot - sl_pts if is_call else spot + sl_pts
+        if kind == "FUT":
+            stop = spot - sl_pts if sig.direction == "BUY" else spot + sl_pts
+        else:
+            stop = spot - sl_pts if is_call else spot + sl_pts
         pos = Position(symbol=inst["tsym"], qty=size.qty, side="BUY", entry_px=res.fill_px,
                        entry_ts=now, stop=stop, risk_per_share=size.risk_per_share,
-                       strike=inst["strike"], right=inst["right"], expiry=ch.expiry,
-                       lot_size=inst.get("lot_size", ch.lot_size), exch=inst.get("exch", "NFO"),
+                       strike=float(inst.get("strike") or 0.0), right=inst.get("right", ""),
+                       expiry=expiry,
+                       lot_size=lot, exch=inst.get("exch", "NFO"),
                        token=inst.get("token", ""), underlying=sig.symbol, entry_spot=spot,
-                       delta_at_entry=inst.get("delta") or 0.0, max_prem=res.fill_px,
+                       delta_at_entry=float(inst.get("delta") or (1.0 if kind == "FUT" else 0.0)),
+                       max_prem=res.fill_px,
                        max_fav_spot=spot, strategy=intent.strategy)
         pos.position_id = self.store.open_position(pos)
         self.store.mark_signal_acted(sid)
