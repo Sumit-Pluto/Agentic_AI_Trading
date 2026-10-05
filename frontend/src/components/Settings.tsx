@@ -12,7 +12,9 @@ const KNOBS: { key: string; label: string; group: string }[] = [
   { key: 'max_positions', label: 'Max open positions', group: 'Money & Risk' },
   { key: 'max_lots_per_symbol', label: 'Max lots / symbol', group: 'Money & Risk' },
   { key: 'max_prem_loss_pct', label: 'Premium stop (%)', group: 'Money & Risk' },
+  { key: 'roundtrip_cost_per_lot', label: 'Costs / lot RT (₹)', group: 'Money & Risk' },
   { key: 'score_threshold', label: 'Signal threshold', group: 'Decision' },
+  { key: 'regime_min_avg', label: 'Regime min avg', group: 'Decision' },
   { key: 'score_margin', label: 'Direction margin', group: 'Decision' },
   { key: 'atr_stop_mult', label: 'ATR stop ×', group: 'Decision' },
   { key: 'model_filter_min_prob', label: 'Model min P(win)', group: 'Decision' },
@@ -22,6 +24,8 @@ const KNOBS: { key: string; label: string; group: string }[] = [
   { key: 'square_off_time', label: 'Square-off time', group: 'Session' },
   { key: 'no_new_entries_after', label: 'No new entries after', group: 'Session' },
   { key: 'demo_step_seconds', label: 'Scan step (s)', group: 'Session' },
+  { key: 'scan_every_seconds', label: 'Live scan cadence (s)', group: 'Session' },
+  { key: 'live_confirm_timeout_s', label: 'Live fill wait (s)', group: 'Session' },
 ]
 
 export function Settings() {

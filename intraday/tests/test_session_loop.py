@@ -144,3 +144,183 @@ def test_daily_loss_halts(tmp_path):
     ctx.set(now=_weekday(11, 5), spot=24800.0, trend="up")
     assert loop.step()["entries"] == 0
     store.close()
+
+
+def test_activity_feed_records_scan(tmp_path):
+    store = Store(tmp_path / "act.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    assert list(loop.activity) == []
+    loop.step()
+    stages = [e["stage"] for e in loop.activity]
+    assert "scan" in stages
+    ev = next(e for e in loop.activity if e["stage"] == "scan")
+    assert set(ev) == {"ts", "stage", "msg"} and "symbols" in ev["msg"]
+    # per-symbol fetch state is exposed for the UI
+    assert {"symbol", "bars", "chain"} <= set(loop.scanner.progress[0])
+    # identical consecutive scans are logged once (plus a 60 s heartbeat)
+    loop.step()
+    assert sum(1 for e in loop.activity if e["stage"] == "scan") == 1
+    store.close()
+
+
+def test_restore_recovers_open_positions_after_restart(tmp_path):
+    store = Store(tmp_path / "re.db")
+    loop = SessionLoop(ReplayContext(), store, CFG, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    saved = loop.positions[0]
+    # a fresh loop (restart) starts blind, then restores from the journal
+    loop2 = SessionLoop(ReplayContext(), store, CFG, brain=Brain.equal())
+    assert loop2.positions == []
+    out = loop2.restore_open_positions()
+    assert len(out) == 1
+    p = loop2.positions[0]
+    assert (p.symbol, p.qty, p.side) == (saved.symbol, saved.qty, saved.side)
+    assert p.stop == saved.stop and p.position_id == saved.position_id
+    assert p.entry_ts == saved.entry_ts and p.strategy == saved.strategy
+    assert loop2.restore_open_positions() == []      # idempotent
+    assert len(loop2.positions) == 1
+    store.close()
+
+
+def test_reconcile_closes_ghosts_and_adopts_unknowns(tmp_path):
+    store = Store(tmp_path / "rec.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    n_orders = store.one("SELECT COUNT(*) n FROM orders")["n"]
+
+    # broker is flat: the journal row is closed WITHOUT placing an exit order
+    # (exiting a ghost would open a reversed position at the broker)
+    s = loop.reconcile_with_broker([], now=ctx.now())
+    assert s["closed_ghosts"] == 1 and loop.positions == []
+    assert store.one("SELECT COUNT(*) n FROM orders")["n"] == n_orders
+    tr = store.one("SELECT * FROM trades ORDER BY id DESC LIMIT 1")
+    assert tr is not None and "reconcile" in (tr["exit_reason"] or "")
+
+    # broker holds what the journal never saw: adopt it as tracked
+    s = loop.reconcile_with_broker(
+        [{"tsym": "NIFTY02OCT25P24800", "exch": "NFO", "prd": "I",
+          "netqty": "-50", "buyavgprc": "0", "sellavgprc": "120.0",
+          "lp": "118.0", "lotsize": "50", "token": "T1"}], now=ctx.now())
+    assert s["adopted"] == 1 and len(loop.positions) == 1
+    p = loop.positions[0]
+    assert (p.side, p.qty, p.strategy) == ("SELL", 50, "adopted")
+    assert (p.right, p.strike, p.underlying) == ("PE", 24800.0, "NIFTY")
+    assert p.stop == 0.0                              # no invented option stop
+    assert p.risk_per_share > 0
+    # non-MIS rows belong to another product: ignored, never adopted
+    s = loop.reconcile_with_broker(
+        [{"tsym": "NIFTY02OCT25C24800", "exch": "NFO", "prd": "M",
+          "netqty": "50", "buyavgprc": "100", "sellavgprc": "0",
+          "lp": "100", "lotsize": "50", "token": "T2"}], now=ctx.now())
+    assert s["ignored_non_mis"] == 1 and s["adopted"] == 0
+    store.close()
+
+
+def test_reconcile_adopts_broker_qty_as_truth(tmp_path):
+    store = Store(tmp_path / "rq.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    tsym = loop.positions[0].symbol
+    live_qty = loop.positions[0].qty * 2    # broker holds more than journal
+    s = loop.reconcile_with_broker(
+        [{"tsym": tsym, "exch": "NFO", "prd": "I", "netqty": str(live_qty),
+          "buyavgprc": "90.0", "sellavgprc": "0", "lp": "95.0",
+          "lotsize": "50", "token": "T9"}], now=ctx.now())
+    assert s["matched"] == 1 and s["qty_adjusted"] == 1
+    assert loop.positions[0].qty == live_qty  # exits must match live size
+    store.close()
+
+
+def test_failed_exit_keeps_position_managed(tmp_path):
+    from intraday.brokers import PaperBroker
+
+    class _FailBroker:
+        name = "failing"
+
+        def place(self, intent):
+            return {"broker_order_id": "", "status": "ERROR",
+                    "reason": "broker down"}
+
+        def cancel(self, oid):
+            return False
+
+        def positions(self):
+            return []
+
+    store = Store(tmp_path / "fx.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    # broker dies and square-off hits: the close is NOT journalled, the
+    # position stays managed and retries instead of going orphan
+    loop.set_broker(_FailBroker())
+    ctx.set(now=_weekday(15, 16), square=True, trend="flat")
+    st = loop.step()
+    assert st["positions"] == 1
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 0
+    assert any("holding for retry" in m for m in loop.positions[0].log)
+    # broker recovers: the retry closes it for real
+    loop.set_broker(PaperBroker(0.10))
+    assert loop.step()["positions"] == 0
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 1
+    store.close()
+
+
+def test_halt_resets_on_new_trading_day(tmp_path):
+    store = Store(tmp_path / "ro.db")
+    cfg = dict(CFG, max_daily_loss_rupees=500.0)
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, cfg, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    ctx.set(now=_weekday(11, 0), spot=24300.0, trend="flat")
+    assert loop.step()["halted"] is True
+    # next session: the halt is gone (a server must not stay dead tomorrow)
+    nxt = ctx.now() + dt.timedelta(days=1)
+    while nxt.weekday() >= 5:
+        nxt += dt.timedelta(days=1)
+    ctx.set(now=nxt.replace(hour=10, minute=0), spot=24800.0, trend="up")
+    st = loop.step()
+    assert st["halted"] is False
+    assert any(e["stage"] == "session" for e in loop.activity)
+    store.close()
+
+
+def test_scan_runs_at_cadence_not_every_tick(tmp_path):
+    store = Store(tmp_path / "cg.db")
+    ctx = ReplayContext()                       # frozen clock
+    loop = SessionLoop(ctx, store, dict(CFG, scan_every_seconds=30),
+                       brain=Brain.equal())
+    calls = []
+    orig = loop.scanner.scan
+    loop.scanner.scan = lambda: (calls.append(1), orig())[1]
+    loop.step()
+    loop.step()                                 # same `now`: scan skipped
+    assert len(calls) == 1
+    assert loop.last_scan and loop.last_scan["signals"] is not None
+    ctx.set(now=_weekday(10, 1))                # +60 s: cadence due again
+    loop.step()
+    assert len(calls) == 2
+    store.close()
+
+
+def test_regime_off_still_fetches_stock_data(tmp_path, monkeypatch):
+    import intraday.intelligence.scanner as scanner_mod
+    monkeypatch.setattr(scanner_mod, "regime_gate",
+                        lambda r, min_avg=40.0: {"on": False, "scalar": 0.0,
+                                                "vetoes": [], "avg": 30.0,
+                                                "detail": "regime avg 30"})
+    store = Store(tmp_path / "actoff.db")
+    loop = SessionLoop(ReplayContext(), store, CFG, brain=Brain.equal())
+    loop.step()
+    assert loop.last_scan["regime"]["on"] is False
+    assert loop.last_scan["signals"] == []
+    # bars + chains are still fetched for every candidate while gated
+    assert len(loop.scanner.progress) >= 2
+    assert all({"symbol", "bars", "chain"} <= set(p)
+               for p in loop.scanner.progress)
+    ev = next(e for e in loop.activity if e["stage"] == "scan")
+    assert "regime OFF" in ev["msg"] and "symbols" in ev["msg"]
+    store.close()

@@ -30,6 +30,18 @@ from .context import IntradayContext
 _VIX_EXCH, _VIX_TOKEN = "NSE", "26017"
 
 
+def _candle_day(c: dict) -> str:
+    """Day key of one candle in the gateway's %d-%m-%Y clock; '' if unparseable
+    (callers then treat the bar as dateless rather than as any specific day)."""
+    t = str((c or {}).get("time", ""))
+    if not t:
+        return ""
+    d = t.split(" ")[0] if " " in t else t[:10]
+    if len(d) == 10 and d[2] == "-" and d[5] == "-":
+        return d
+    return ""
+
+
 def _chains_db_path(cfg: dict) -> Path:
     p = cfg.get("chains_db_path") or os.environ.get("OPTIONSMITH_CHAIN_DB")
     if p:
@@ -247,14 +259,34 @@ class GatewayChainsContext(IntradayContext):
         return val
 
     def prev_day(self, symbol: str) -> dict:
-        """Previous-day high/low/close/open. The gateway's DAILY series returns
-        nothing for these tokens, so we derive the prior session's levels from
-        the INTRADAY 5-min candles (a 3-day window), grouping by date."""
-        if symbol in self._prevday:
-            return self._prevday[symbol]
+        """Previous-day high/low/close/open. Prefers the gateway's DAILY series
+        (last bar before today's session); when it returns nothing for these
+        tokens, derives the prior session's levels from the INTRADAY 5-min
+        candles (a 3-day window), grouping by date. Cached per (symbol, day) so
+        a long-running engine never serves yesterday's levels as today's."""
+        today_key = ist_now().date().isoformat()
+        hit = self._prevday.get(symbol)
+        if isinstance(hit, dict) and hit.get("_day") == today_key:
+            return {k: v for k, v in hit.items() if not k.startswith("_")}
         tok = self._resolve_token(symbol)
         if not tok:
             return {}
+        try:
+            res = self.client.candles(tok[0], tok[1], daily=True, days=30)
+            daily = res.get("candles", []) if isinstance(res, dict) else res
+        except Exception:
+            daily = []
+        if daily:
+            # last bar dated before today; unparseable dates -> last bar
+            bars_today = ist_now().strftime("%d-%m-%Y")
+            prior = [c for c in daily if _candle_day(c) not in ("", bars_today)]
+            bar = (prior or daily)[-1]
+            try:
+                return self._memo_prevday(symbol, today_key, {
+                    "pdh": float(bar["high"]), "pdl": float(bar["low"]),
+                    "pdc": float(bar["close"]), "pdo": float(bar["open"])})
+            except (KeyError, ValueError, TypeError):
+                pass
         try:
             res = self.client.candles(tok[0], tok[1], interval=self._tf_min,
                                       lookback_minutes=3 * 24 * 60)
@@ -279,10 +311,13 @@ class GatewayChainsContext(IntradayContext):
                 return dt.datetime.min
         day = by_date[max(prior, key=_key)]
         try:
-            self._prevday[symbol] = {
+            return self._memo_prevday(symbol, today_key, {
                 "pdh": max(float(x["high"]) for x in day),
                 "pdl": min(float(x["low"]) for x in day),
-                "pdc": float(day[-1]["close"]), "pdo": float(day[0]["open"])}
+                "pdc": float(day[-1]["close"]), "pdo": float(day[0]["open"])})
         except (KeyError, ValueError):
             return {}
-        return self._prevday[symbol]
+
+    def _memo_prevday(self, symbol: str, day_key: str, levels: dict) -> dict:
+        self._prevday[symbol] = {**levels, "_day": day_key}
+        return dict(levels)

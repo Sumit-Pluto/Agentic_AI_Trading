@@ -31,8 +31,9 @@ export function Header({ snap, connected }: { snap: Snapshot | null; connected: 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 800, letterSpacing: 0.5 }}>◆ INTRADAY&nbsp;AGENTIC</div>
         <span className="pill mono">{hhmm(st?.now)} IST</span>
-        <span className="pill" style={{ borderColor: live ? 'var(--red)' : 'var(--green)',
-          color: live ? 'var(--red)' : 'var(--green)', fontWeight: 800 }}>
+        <span className="pill" title={`broker: ${st?.broker || '—'}`}
+          style={{ borderColor: live ? 'var(--red)' : 'var(--green)',
+            color: live ? 'var(--red)' : 'var(--green)', fontWeight: 800 }}>
           {live ? '● REAL MONEY' : '🧪 PAPER'}
         </span>
         <span className="pill" title={`data source: ${st?.data_source || '—'}`}

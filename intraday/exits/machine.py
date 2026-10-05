@@ -27,6 +27,10 @@ class ExitMarket:
     bars: object = None         # underlying intraday bars (for ATR/ADX/VWAP)
     vwap: float | None = None
     is_square_off: bool = False
+    bars_elapsed: float = 1.0   # bars held since the last manage() call; the
+                                # loop passes wall-clock elapsed bars so age is
+                                # in bars at any engine cadence (direct callers
+                                # age one bar per call, the historical default)
 
 
 @dataclass
@@ -46,11 +50,21 @@ def _atr_pts(bars, spot) -> float:
 
 def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
     cfg = cfg or {}
-    is_call = str(pos.right).upper().startswith("C")
+    right = str(pos.right).upper()
     long = pos.is_long
+    # Direction of the UNDERLYING bet (drives the stop/trailing/VWAP logic):
+    # a long call / short put / long future is bullish; the mirrors bearish.
+    # (Inferring it from CE-vs-PE alone treats every FUT leg as bearish and
+    # stop-hunts long futures on the first tick after entry.)
+    bullish = (long if right == "FUT"
+               else (right.startswith("C") == long))
     prem = mkt.leg_mid if mkt.leg_mid > 0 else mkt.leg_bid
     exit_px = mkt.leg_bid if long else mkt.leg_ask     # marketable exit for the side
-    pos.age_bars += 1
+    try:
+        step_age = max(float(mkt.bars_elapsed), 0.0)
+    except (TypeError, ValueError):
+        step_age = 1.0
+    pos.age_bars += step_age
 
     # premium-based R multiple
     rps = pos.risk_per_share or 1.0
@@ -63,9 +77,9 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
     # ── I1 HARD STOP ─────────────────────────────────────────────────────────
     #   (a) underlying invalidation (primary): spot through the structural stop
     if pos.stop and pos.stop > 0:
-        if is_call and mkt.spot <= pos.stop:
+        if bullish and mkt.spot <= pos.stop:
             return ExitDecision("EXIT", f"I1 underlying stop {pos.stop:.0f}", exit_px=exit_px)
-        if (not is_call) and mkt.spot >= pos.stop:
+        if (not bullish) and mkt.spot >= pos.stop:
             return ExitDecision("EXIT", f"I1 underlying stop {pos.stop:.0f}", exit_px=exit_px)
     #   (b) premium stop (secondary) for a long option
     if long:
@@ -94,13 +108,13 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
 
     # ── I4 TRAILING STOP (ratchet-only, arms after +1R) ─────────────────────
     if mkt.spot == mkt.spot:
-        pos.max_fav_spot = (max(pos.max_fav_spot or mkt.spot, mkt.spot) if is_call
+        pos.max_fav_spot = (max(pos.max_fav_spot or mkt.spot, mkt.spot) if bullish
                             else min(pos.max_fav_spot or mkt.spot, mkt.spot))
     if pos.breakeven_done and mkt.bars is not None:
         a = _atr_pts(mkt.bars, mkt.spot)
         adx_ = last(adx(mkt.bars))
         mult = float(cfg.get("trail_atr_mult", 2.5)) * (1.2 if (adx_ == adx_ and adx_ >= 25) else 1.0)
-        if is_call:
+        if bullish:
             trail = pos.max_fav_spot - mult * a
             pos.stop = max(pos.stop, trail)             # ratchet up only
         else:
@@ -116,9 +130,9 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
     # ── I6 STRUCTURE FLIP (5m close back through VWAP against the position) ──
     vwap = mkt.vwap
     if vwap and vwap > 0:
-        if is_call and mkt.spot < vwap and r_mult < t1:
+        if bullish and mkt.spot < vwap and r_mult < t1:
             return ExitDecision("EXIT", "I6 back below VWAP", exit_px=exit_px)
-        if (not is_call) and mkt.spot > vwap and r_mult < t1:
+        if (not bullish) and mkt.spot > vwap and r_mult < t1:
             return ExitDecision("EXIT", "I6 back above VWAP", exit_px=exit_px)
 
     # ── I7 IV-CRUSH / EVENT (optional; needs an iv-drop flag from the loop) ─

@@ -25,31 +25,59 @@ def _tf_minutes(cfg: dict) -> int:
     return _TF_MIN.get(str(cfg.get("bar_timeframe", "5m")), 5)
 
 
-def _session_ctx(bars, cfg: dict, extra: dict | None = None) -> dict:
-    """Opening-range / first-hour / elapsed-minutes context from the session's
-    bars (which start at the open, so bar count * tf ≈ minutes elapsed)."""
+def _session_ctx(bars, cfg: dict, extra: dict | None = None,
+                 now: dt.datetime | None = None) -> dict:
+    """Opening-range / first-hour / elapsed-minutes context.
+
+    Minutes come from the CLOCK when `now` is passed (truth for multi-session
+    bar caches, where bar count × tf wildly overstates the elapsed session);
+    otherwise from bar count (the legacy single-session assumption). Session
+    LEVELS (day open, opening range, first hour) are read off today's slice —
+    the last k bars with k from the clock — whenever the clock shows the cache
+    extends past today's open; pre-open or clockless, the full bars apply."""
     s = dict(extra or {})
     tf = _tf_minutes(cfg)
     if bars is None or len(bars) == 0:
         return s
     n = len(bars)
-    s.setdefault("minutes_since_open", n * tf)
+    sess = bars
     open_hhmm = str(cfg.get("session_open", "09:15")); close_hhmm = str(cfg.get("session_close", "15:30"))
     try:
         oh, om = (int(x) for x in open_hhmm.split(":")); ch, cm = (int(x) for x in close_hhmm.split(":"))
         total = (ch * 60 + cm) - (oh * 60 + om)
-        s.setdefault("minutes_to_close", max(total - n * tf, 0))
+        clock_ok = True
     except ValueError:
-        pass
-    s.setdefault("day_open", float(bars["open"].iloc[0]))
+        total, clock_ok = 375, False
+    if now is not None and clock_ok:
+        try:
+            o = now.replace(hour=oh, minute=om, second=0, microsecond=0)
+            elapsed = (now - o).total_seconds() / 60.0
+        except Exception:
+            elapsed = None
+        if elapsed is not None:
+            s.setdefault("minutes_since_open", max(elapsed, 0.0))
+            s.setdefault("minutes_to_close", max(total - elapsed, 0.0))
+            if elapsed > 0:
+                # today's session ≈ the last k bars; multi-day caches slice.
+                k = int(elapsed // tf) + 1
+                if 0 < k < n:
+                    sess = bars.iloc[-k:]
+        else:
+            s.setdefault("minutes_since_open", n * tf)
+            s.setdefault("minutes_to_close", max(total - n * tf, 0))
+    else:
+        s.setdefault("minutes_since_open", n * tf)
+        s.setdefault("minutes_to_close", max(total - n * tf, 0))
+    m = len(sess)
+    s.setdefault("day_open", float(sess["open"].iloc[0]))
     or_bars = max(1, cfg.get("or_minutes", 15) // tf)
     s.setdefault("or_minutes", cfg.get("or_minutes", 15))
-    s.setdefault("or_hi", float(bars["high"].iloc[:or_bars].max()))
-    s.setdefault("or_lo", float(bars["low"].iloc[:or_bars].min()))
+    s.setdefault("or_hi", float(sess["high"].iloc[:or_bars].max()))
+    s.setdefault("or_lo", float(sess["low"].iloc[:or_bars].min()))
     fh_bars = max(1, 60 // tf)
-    if n >= fh_bars:
-        s.setdefault("first_hour_hi", float(bars["high"].iloc[:fh_bars].max()))
-        s.setdefault("first_hour_lo", float(bars["low"].iloc[:fh_bars].min()))
+    if m >= fh_bars:
+        s.setdefault("first_hour_hi", float(sess["high"].iloc[:fh_bars].max()))
+        s.setdefault("first_hour_lo", float(sess["low"].iloc[:fh_bars].min()))
     return s
 
 
@@ -84,6 +112,14 @@ class Scanner:
         self.ctx = ctx
         self.brain = brain or Brain.equal()
         self.cfg = cfg or {}
+        self.progress: list[dict] = []  # per-symbol fetch state of the last scan (for the UI)
+
+    @staticmethod
+    def _count(bars) -> int:
+        try:
+            return len(bars) if bars is not None else 0
+        except Exception:
+            return 0
 
     def _index_symbol(self) -> str:
         return getattr(self.ctx, "index_symbol", None) or self.cfg.get("index_symbol", "NIFTY")
@@ -116,7 +152,11 @@ class Scanner:
             prev_day = ctx.prev_day(symbol) or {}
         except Exception:
             prev_day = {}
-        session = _session_ctx(bars, self.cfg, session_extra)
+        try:
+            tick_now = ctx.now()
+        except Exception:
+            tick_now = None
+        session = _session_ctx(bars, self.cfg, session_extra, tick_now)
         return AgentInput(symbol=symbol, bars=bars, index_bars=index_bars, chain=chain,
                           spot=spot, now=ctx.now(), cfg=self.cfg, vix=vix,
                           prev_day=prev_day, session=session, positioning=positioning)
@@ -141,21 +181,39 @@ class Scanner:
         idx = self._index_symbol()
         index_bars = self.ctx.bars(idx)
         candidates = [s for s in self.ctx.symbols() if s != idx] or [idx]
+        self.progress = [{"symbol": idx, "role": "index",
+                          "bars": self._count(index_bars), "chain": False}]
 
         # 1. regime pass on the index
         breadth = self._breadth([idx] + candidates)
         reg_in = self._build_input(idx, index_bars, {"breadth_pct": breadth})
         r_results = run_family(reg_in, "R")
-        regime = regime_gate(r_results)
+        regime = regime_gate(r_results,
+                             float(self.cfg.get("regime_min_avg", 40.0)))
 
         all_rows: list[dict] = [self._row(idx, r) for r in r_results]
         if not regime["on"]:
+            # Regime-gated: no signals, but still fetch bars + chains for every
+            # candidate so the UI shows live data flow (and caches stay warm
+            # for the moment regime flips on). No agent scoring here.
+            for sym in candidates:
+                try:
+                    inp = self._build_input(sym, index_bars)
+                    self.progress.append({"symbol": sym, "role": "stock",
+                                          "bars": self._count(inp.bars),
+                                          "chain": inp.chain is not None})
+                except Exception:
+                    self.progress.append({"symbol": sym, "role": "stock",
+                                          "bars": 0, "chain": False})
             return [], regime, all_rows
 
         # 2. per-candidate scan
         results_by_symbol: dict[str, list] = {}
         for sym in candidates:
             inp = self._build_input(sym, index_bars)
+            self.progress.append({"symbol": sym, "role": "stock",
+                                  "bars": self._count(inp.bars),
+                                  "chain": inp.chain is not None})
             rs = (run_family(inp, "S") + run_family(inp, "F")
                   + run_family(inp, "V") + run_family(inp, "M") + run_family(inp, "C"))
             results_by_symbol[sym] = rs
@@ -220,7 +278,11 @@ class Scanner:
                     greeks = None
         session: dict = {}
         try:
-            session = _session_ctx(self.ctx.bars(sym), cfg)
+            tick_now = self.ctx.now()
+        except Exception:
+            tick_now = None
+        try:
+            session = _session_ctx(self.ctx.bars(sym), cfg, None, tick_now)
         except Exception:
             session = {}
         atr_pts = None

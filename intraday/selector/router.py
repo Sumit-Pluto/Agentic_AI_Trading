@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from .features import SelectorFeatures
+from .features import SelectorFeatures, build_features
 
 FUT = "FUT"
 OPT = "OPT"

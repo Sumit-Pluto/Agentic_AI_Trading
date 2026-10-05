@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -62,6 +63,19 @@ def _store():
 
 def _rows(sql: str, args=()):
     return [dict(r) for r in _store().q(sql, args)]
+
+
+def _guard_mutation(request: Request):
+    """Bearer-token guard for state-changing endpoints. Active only when
+    INTRADAY_API_TOKEN is set (VPS deployments); local runs stay open so the
+    cockpit works with zero setup. Clients send
+    `Authorization: Bearer <token>`."""
+    want = (os.environ.get("INTRADAY_API_TOKEN") or "").strip()
+    if not want:
+        return
+    got = (request.headers.get("authorization") or "").strip()
+    if got != f"Bearer {want}":
+        raise HTTPException(status_code=401, detail="bad or missing API token")
 
 
 # ---------------- live stream ----------------
@@ -124,6 +138,14 @@ def chain(symbol: str = ""):
     return chains
 
 
+@app.get("/api/activity")
+def activity(limit: int = 200):
+    snap = runner.snapshot()
+    acts = snap.get("activity", [])
+    return {"events": acts[-limit:] if limit > 0 else acts,
+            "scan": snap.get("scan", [])}
+
+
 @app.get("/api/equity")
 def equity(limit: int = 500):
     rows = _rows("SELECT ts,date,equity,realized_pnl,unrealized_pnl,n_positions "
@@ -179,7 +201,8 @@ def get_config():
 
 
 @app.post("/api/config")
-async def set_config(body: dict):
+async def set_config(body: dict, request: Request):
+    _guard_mutation(request)
     # mutate in place so the loop/governor/rules (which hold the same dict) see it
     for k, v in (body or {}).items():
         if k in config_mod.DEFAULTS:
@@ -189,19 +212,23 @@ async def set_config(body: dict):
 
 
 @app.post("/api/pause")
-async def pause(body: dict):
+async def pause(body: dict, request: Request):
     """Start/Stop the scanner. Stop (paused=True) halts NEW entries; open
     positions keep running under the exit engine unless square_off is set."""
+    _guard_mutation(request)
     runner.cfg["paused"] = bool(body.get("paused", True))
+    config_mod.save(runner.cfg)          # a restart must not silently resume
     if runner.cfg["paused"] and body.get("square_off"):
         runner.loop.request_flatten("stop: square-off")
     return {"paused": runner.cfg["paused"]}
 
 
 @app.post("/api/kill")
-async def kill_switch():
+async def kill_switch(request: Request):
     """Live-only kill: halt trading for the day AND flatten all open positions."""
+    _guard_mutation(request)
     runner.cfg["paused"] = True
+    config_mod.save(runner.cfg)
     runner.loop.request_flatten("kill switch", halt=True)
     return {"halted": True, "paused": True}
 
@@ -224,9 +251,10 @@ def get_mode():
 
 
 @app.post("/api/mode")
-async def set_mode(body: dict):
+async def set_mode(body: dict, request: Request):
     """Toggle PAPER<->LIVE. LIVE requires {"mode":"live","confirm":"LIVE"} and a
     connected Gateway; swaps the broker at runtime."""
+    _guard_mutation(request)
     res = runner.set_mode(str(body.get("mode", "paper")), str(body.get("confirm", "")))
     if "error" in res:
         return JSONResponse(status_code=400, content=res)

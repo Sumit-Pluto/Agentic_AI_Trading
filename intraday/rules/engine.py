@@ -69,10 +69,14 @@ class RuleEngine:
             return False, f"max open positions reached ({max_pos})"
 
         # already-held / duplicate: one position per (underlying, direction).
-        # right encodes the directional bet (CE=bullish, PE=bearish).
+        # right encodes the directional bet for options (CE=bullish, PE=bearish);
+        # futures need the side too, or a hedge/reversal reads as a duplicate.
+        side = str(getattr(intent, "side", "")).upper()
         for p in open_positions:
             if (getattr(p, "underlying", "") == underlying
-                    and str(getattr(p, "right", "")).upper() == right):
+                    and str(getattr(p, "right", "")).upper() == right
+                    and (right != "FUT"
+                         or str(getattr(p, "side", "")).upper() == side)):
                 return False, f"already holding {underlying} {right} — duplicate"
 
         # per-underlying lot cap (exposure across any legs on this underlying)

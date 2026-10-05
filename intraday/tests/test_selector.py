@@ -38,14 +38,21 @@ def _sig(symbol="NIFTY", direction="BUY", fam=None, regime=None):
     return s
 
 
+_QUOTE_KEYS = {"spread_pct", "oi", "volume", "iv", "ask", "bid", "delta"}
+
+
 def _feats(dte=7, **kw):
-    base = dict(symbol="NIFTY", direction="BUY")
-    base.update(kw)
-    return build_features(chain=_chainlike(dte=dte), quote=_quote(), greeks={"delta": 0.5, "theta": -3.0},
-                          family_scores={"M": 55.0},
-                          regime={"on": True, "scalar": 1.0},
-                          session={"minutes_to_close": 200},
-                          atr_pts=60.0, futures_available=True, **base)
+    # quote-level overrides (spread/oi/...) reshape the fake quote; everything
+    # else overrides the build_features defaults (session/family/atr/...).
+    qkw = {k: kw.pop(k) for k in list(kw) if k in _QUOTE_KEYS}
+    params = dict(symbol="NIFTY", direction="BUY",
+                  family_scores={"M": 55.0},
+                  regime={"on": True, "scalar": 1.0},
+                  session={"minutes_to_close": 200},
+                  atr_pts=60.0, futures_available=True)
+    params.update(kw)
+    return build_features(chain=_chainlike(dte=dte), quote=_quote(**qkw),
+                          greeks={"delta": 0.5, "theta": -3.0}, **params)
 
 
 # ---------- router rules ----------
@@ -195,4 +202,43 @@ def test_loop_legacy_ctx_still_opens_ce(tmp_path):
     st = loop.step()
     assert st["entries"] == 1
     assert loop.positions[0].right == "CE"
+    store.close()
+
+
+def _fut_sig(ctx, direction):
+    from intraday.contracts import Signal
+    return Signal(ts=ctx.now(), symbol="NIFTY", direction=direction,
+                  score_buy=75.0, score_sell=10.0,
+                  family_scores={"M": 80.0}, agent_rows=[], vetoes=[],
+                  n_scored=5, regime={"on": True, "scalar": 1.0},
+                  instrument=build_futures_instrument(
+                      symbol="NIFTY", direction=direction, spot=ctx.spot("NIFTY"),
+                      lot_size=50, exch="NFO", token="FUT1", tsym="NIFTY-FUT"))
+
+
+def test_loop_fut_entry_takes_signal_side(tmp_path):
+    """FUT legs are linear: a SELL view SELLS futures (options keep BUYing the
+    put leg). The old code bought futures for both directions."""
+    store = Store(tmp_path / "side.db")
+    loop = SessionLoop(FutReplayContext(), store, FUTCFG, brain=Brain.equal())
+    assert loop._enter(_fut_sig(loop.ctx, "SELL"), {"scalar": 1.0}, loop.ctx.now())
+    pos = loop.positions[0]
+    assert (pos.right, pos.side) == ("FUT", "SELL")
+    assert pos.stop > pos.entry_spot          # bearish stop sits above entry
+    o = store.one("SELECT side FROM orders ORDER BY id DESC LIMIT 1")
+    assert o["side"] == "SELL"
+    store.close()
+
+
+def test_loop_long_fut_survives_first_manage(tmp_path):
+    """A long FUT above its stop is still open after the next step (the old
+    exit read treated every FUT leg as bearish and I1-exited it at once)."""
+    store = Store(tmp_path / "hold.db")
+    ctx = FutReplayContext()
+    loop = SessionLoop(ctx, store, FUTCFG, brain=Brain.equal())
+    assert loop._enter(_fut_sig(ctx, "BUY"), {"scalar": 1.0}, ctx.now())
+    st = loop.step()                          # manage (hold) + scan (dup-gated)
+    assert st["positions"] == 1 and st["entries"] == 0
+    assert loop.positions[0].side == "BUY"
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 0  # no I1 churn
     store.close()

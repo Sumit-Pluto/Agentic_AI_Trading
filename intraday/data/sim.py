@@ -19,7 +19,7 @@ import random
 
 import pandas as pd
 
-from ..options.chain_builder import build_chain
+from ..options.chain_builder import fill_missing_ivs, from_gateway_payload
 from ..options.models import IST, MARKET_CLOSE, MARKET_OPEN
 
 
@@ -180,4 +180,11 @@ class SimContext:
                        "expiry_iso": expiry, "lot_size": o.lot,
                        "underlying_exchange": "NSE", "underlying_token": sym,
                        "chain": rows, "quality": {"quote_span_s": 0.0}}
-            self._chains[sym] = build_chain(payload, sym)
+            # Anchor the chain to SIM time BEFORE IV inversion: Chain.t_years
+            # defaults `asof` to the real clock, which marches past the
+            # simulated window and then reads every sim chain as expired
+            # (t=0 → no IVs, no greeks, and the V/F agents plus sizing
+            # silently degrade to fallbacks).
+            ch = from_gateway_payload(payload, sym)
+            ch.asof = self._now
+            self._chains[sym] = fill_missing_ivs(ch)

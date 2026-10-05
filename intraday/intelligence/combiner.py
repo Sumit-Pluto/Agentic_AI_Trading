@@ -18,7 +18,7 @@ from ..agents.base import AgentResult
 from ..contracts import STOCK_FAMILIES, Brain
 
 
-def regime_gate(r_results: list[AgentResult]) -> dict:
+def regime_gate(r_results: list[AgentResult], min_avg: float = 40.0) -> dict:
     """Fold the R family (+R6 event gate) into {on, scalar, vetoes, detail}."""
     vetoes = [r for r in r_results if r.veto]
     scored = [r for r in r_results if r.scored and not r.shadow]
@@ -26,7 +26,7 @@ def regime_gate(r_results: list[AgentResult]) -> dict:
         return {"on": True, "scalar": 0.5, "vetoes": [v.veto for v in vetoes],
                 "detail": "no regime agents scored — half size"}
     avg = float(np.mean([r.score_buy for r in scored]))
-    on = avg >= 40 and not vetoes
+    on = avg >= min_avg and not vetoes
     scalar = 0.0 if not on else min(1.0, max(0.3, (avg - 30) / 50))
     return {"on": on, "scalar": scalar, "vetoes": [v.veto for v in vetoes],
             "avg": avg, "detail": f"regime avg {avg:.0f}"

@@ -106,3 +106,30 @@ def test_paper_short_pnl_sign(tmp_path):
     tr = store.one("SELECT * FROM trades WHERE id=?", (tid,))
     assert tr["pnl"] == (100.0 - 60.0) * 50   # short profit = entry - exit
     store.close()
+
+
+def test_roundtrip_costs_booked_into_pnl(tmp_path):
+    """Configured per-share costs (brokerage/STT/...) reduce booked P&L, so the
+    daily-loss kill and the reports see net — not fantasy gross — numbers."""
+    store = Store(tmp_path / "c.db")
+    now = ist_now()
+    pos = Position(symbol="NIFTY24800CE", qty=50, side="BUY", entry_px=100.0,
+                   entry_ts=now, stop=0.0, risk_per_share=20.0, strike=24800,
+                   right="CE", lot_size=50, underlying="NIFTY", entry_spot=24800.0)
+    pos.position_id = store.open_position(pos)
+    pos.exit_px = 110.0
+    pos.exit_ts = now + dt.timedelta(minutes=10)
+    pos.exit_reason = "I3 target"
+    tid = store.close_position(pos, cost_per_share=2.0)
+    tr = store.one("SELECT * FROM trades WHERE id=?", (tid,))
+    assert tr["pnl"] == (110.0 - 100.0) * 50 - 2.0 * 50
+    # partials share the same accounting
+    pos2 = Position(symbol="NIFTY24800CE", qty=50, side="BUY", entry_px=100.0,
+                    entry_ts=now, stop=0.0, risk_per_share=20.0, strike=24800,
+                    right="CE", lot_size=50, underlying="NIFTY", entry_spot=24800.0)
+    pos2.position_id = store.open_position(pos2)
+    tid2 = store.book_partial(pos2, 110.0, 25, "I3 book", now, cost_per_share=2.0)
+    tr2 = store.one("SELECT * FROM trades WHERE id=?", (tid2,))
+    assert tr2["pnl"] == (110.0 - 100.0) * 25 - 2.0 * 25
+    assert pos2.qty == 25
+    store.close()

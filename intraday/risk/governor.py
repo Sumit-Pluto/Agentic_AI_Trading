@@ -43,10 +43,20 @@ class Governor:
                      or self.cfg.get("equity_rupees", 100000.0))
 
     def deployed_premium(self, open_positions) -> float:
-        """₹ currently committed as option premium across open longs (the budget
-        utilisation numerator; premium paid is the capital at work)."""
-        return sum(max(getattr(p, "entry_px", 0.0), 0.0) * getattr(p, "qty", 0)
-                   for p in (open_positions or []) if getattr(p, "is_long", True))
+        """₹ currently committed across open positions (the budget utilisation
+        numerator). Options count premium paid (longs only); FUT legs count
+        stop-risk notional (risk_per_share × qty, long or short) — counting a
+        ₹25k futures mark as "deployed premium" would exhaust a ₹1L budget on
+        the first lot and block every later entry."""
+        tot = 0.0
+        for p in (open_positions or []):
+            if str(getattr(p, "right", "")).upper() == "FUT":
+                tot += (max(getattr(p, "risk_per_share", 0.0) or 0.0, 0.0)
+                        * max(getattr(p, "qty", 0) or 0, 0))
+            elif getattr(p, "is_long", True):
+                tot += (max(getattr(p, "entry_px", 0.0) or 0.0, 0.0)
+                        * max(getattr(p, "qty", 0) or 0, 0))
+        return tot
 
     def utilisation_pct(self, open_positions) -> float:
         b = self.budget()
@@ -163,7 +173,13 @@ class Governor:
 
         is_call = str(instrument.get("right", "")).upper().startswith("C") \
             if "is_call" not in instrument else bool(instrument["is_call"])
-        strike = float(instrument["strike"])
+        # Sizing must never raise into the loop: a malformed leg sizes to zero.
+        try:
+            strike = float(instrument["strike"])
+        except (KeyError, TypeError, ValueError):
+            return SizeResult(0, 0, 0.0, 0.0, 0.0, reason="instrument has no strike")
+        if chain is None or not getattr(chain, "spot", 0):
+            return SizeResult(0, 0, 0.0, 0.0, 0.0, reason="no chain/spot")
         spot = chain.spot
         t, r = chain.t_years, chain.r
         iv = instrument.get("iv") or (chain.get(strike, is_call).iv if chain.get(strike, is_call) else None)

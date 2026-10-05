@@ -54,10 +54,12 @@ Intelligence→`agents`+`intelligence`, §2.5 Learning→`journal`+`training`,
 ## Test (offline, no broker)
 
 ```bash
-python -m pytest intraday/tests -q      # 27 pass: greeks/chain pipeline, paper flow,
+python -m pytest intraday/tests -q      # 78 pass: greeks/chain pipeline, paper flow,
                                         # all 25 agents, scanner, governor/rules/exits,
-                                        # and a full session loop (entry→exit, square-off,
-                                        # daily-loss halt)
+                                        # full session loop (entry→exit, square-off,
+                                        # daily-loss halt), FUT-vs-OPT routing, live
+                                        # broker fill-confirm, restart recovery +
+                                        # broker reconciliation, server safety rails
 ```
 
 ## Run the cockpit demo (no broker needed)
@@ -87,3 +89,34 @@ python -m intraday.scripts.demo_paper --symbol NIFTY
 Builds a real NIFTY chain, computes greeks, and runs one PAPER order into the
 journal (no real order placed). Config: `intraday/state/intraday_config.json`
 (env `INTRADAY_CONFIG`); Trade DB: `intraday/state/intraday.db` (env `INTRADAY_DB`).
+
+## Safety rails (live-readiness)
+
+- **LIVE needs real data**: the PAPER→LIVE toggle (typed `LIVE` + Gateway
+  client) is additionally refused unless `engine_mode=live` — real orders can
+  never fire off the simulated feed. The header badges (REAL MONEY/PAPER,
+  LIVE/SIM DATA, broker) always show what is actually trading.
+- **Fills are confirmed, not assumed**: a live placement returns only after a
+  bounded order-book poll (`live_confirm_timeout_s`, `live_fill_poll_s`).
+  Unfilled-after-window orders are cancelled; leftovers report TIMEOUT
+  (nothing filled) or WORKING (still live — resolve in the book). Partials
+  track filled shares only. Exits/partials/flattens journal a close ONLY on a
+  confirmed fill (at the real fill price) and retry next tick otherwise.
+- **Restart recovery**: journal OPEN rows are restored to tracked positions
+  before the first tick; LIVE startups then reconcile against the broker book
+  (externally-closed rows journal-closed with NO exit order, unknown broker
+  nets adopted as tracked with loud logs, qty mismatches resolved to broker
+  truth, non-MIS rows ignored). The daily halt resets on session rollover.
+- **FUT legs are first-class**: futures take the signal side (SELL views sell),
+  exits/trailing/VWAP follow the trade direction (not CE-vs-PE), budget counts
+  stop-risk notional, dedup is side-aware, and the UI marks FUT P&L live.
+- **Honest numbers**: `roundtrip_cost_per_lot` (₹, default 0 — set ~40–60 for
+  NSE options) books brokerage/STT into trade P&L so the kill switch and the
+  reports see net; paper exits fill at bid/ask ± slippage like entries do.
+- **API guard**: set `INTRADAY_API_TOKEN` on the VPS and all mutating endpoints
+  (mode/kill/pause/config) require `Authorization: Bearer <token>`; the cockpit
+  prompts once and remembers it. Unset locally = zero-setup open server.
+- **Live load**: exits, kill and marks run every tick; the full agent scan runs
+  at `scan_every_seconds` (sim/backtest clocks scan every tick). Session
+  levels (day open, opening range, first hour) are sliced to today's bars by
+  the clock, so multi-session bar caches can't poison the setup agents.

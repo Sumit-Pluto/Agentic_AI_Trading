@@ -80,11 +80,19 @@ class EngineRunner:
         return SimContext(self.cfg)
 
     def _make_broker(self, mode: str):
+        def _f(key: str, default: float) -> float:
+            try:
+                return float(self.cfg.get(key, default))
+            except (TypeError, ValueError):
+                return default
         if str(mode).lower() == "live" and self.client is not None:
             from ..brokers import GatewayBroker
-            return GatewayBroker(self.client, product_type="I")  # MIS: distinct from snowball/swing NRML
+            return GatewayBroker(  # MIS: distinct from snowball/swing NRML
+                self.client, product_type="I",
+                confirm_timeout_s=_f("live_confirm_timeout_s", 12.0),
+                poll_s=_f("live_fill_poll_s", 1.0))
         from ..brokers import PaperBroker
-        return PaperBroker(float(self.cfg.get("slippage_pct", 0.10)))
+        return PaperBroker(_f("slippage_pct", 0.10))
 
     def _wire_funds(self):
         live = str(self.cfg.get("mode", "paper")).lower() == "live" and self.client is not None
@@ -101,7 +109,8 @@ class EngineRunner:
         return self._funds_val
 
     def set_mode(self, mode: str, confirm: str = "") -> dict:
-        """Toggle PAPER<->LIVE. LIVE requires typed confirm + a Gateway client."""
+        """Toggle PAPER<->LIVE. LIVE requires typed confirm + a Gateway client
+        + REAL gateway data: live orders on the simulated feed are refused."""
         mode = str(mode).lower()
         if mode == "live":
             if confirm != "LIVE":
@@ -111,6 +120,10 @@ class EngineRunner:
             if self.client is None:
                 return {"error": "no Gateway client — set GATEWAY_CLIENT_ID/SECRET and "
                                  "ensure the Gateway broker session is connected"}
+            if self.engine_mode != "live":
+                return {"error": "refusing LIVE broker on simulated data — "
+                                 "restart with engine_mode=live (real Gateway "
+                                 "data) before trading real money"}
         self.cfg["mode"] = mode
         try:
             from .. import config as _c
@@ -126,6 +139,25 @@ class EngineRunner:
         self._async_loop = async_loop
         if self._thread and self._thread.is_alive():
             return
+        # restart recovery BEFORE the first tick (single-threaded here, no race):
+        # journal OPEN rows become tracked positions again, then LIVE mode
+        # reconciles them against the broker book (ghosts closed, unknowns
+        # adopted, qty mismatches resolved to broker truth).
+        try:
+            self.loop.restore_open_positions()
+            live = (str(self.cfg.get("mode", "paper")).lower() == "live"
+                    and getattr(self.loop.broker, "name", "") == "gateway")
+            if live:
+                try:
+                    bpos = self.loop.broker.positions()
+                except Exception as e:
+                    bpos = None
+                    self.loop._log("reconcile", f"broker book unreadable ({e}) — "
+                                                "journal state kept, verify manually")
+                if bpos is not None:
+                    self.loop.reconcile_with_broker(bpos)
+        except Exception as e:
+            print(f"[runner] startup recovery failed ({e}); starting without it")
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="engine-loop", daemon=True)
         self._thread.start()
@@ -174,6 +206,7 @@ class EngineRunner:
             "seq": self._seq,
             "state": {
                 "mode": self.mode, "trading_mode": trading_mode,
+                "broker": self.loop.broker.name,   # the object orders really go to
                 "data_source": type(self.ctx).__name__,   # GatewayChainsContext=real | SimContext=sim
                 "live_data": self.engine_mode == "live",
                 "paused": bool(self.cfg.get("paused", False)),
@@ -192,17 +225,22 @@ class EngineRunner:
             "positions": [self._pos_view(p) for p in pos],
             "signals": (self.loop.last_scan or {}).get("signals", []),
             "agent_rows": (self.loop.last_scan or {}).get("rows", []),
+            "activity": list(self.loop.activity),
+            "scan": list(getattr(self.loop.scanner, "progress", [])),
             "chains": chains,
             "equity_point": {"t": now.isoformat(), "equity": _num(st.get("equity"))},
         }
 
     def _pos_view(self, p) -> dict:
-        is_call = str(p.right).upper().startswith("C")
-        q = None
-        ch = self.ctx.chain(p.underlying)
-        if ch:
-            q = ch.get(p.strike, is_call)
-        mark = (q.bid if p.is_long else q.ask) if q else p.entry_px
+        if str(p.right).upper() == "FUT":
+            mark = self.loop._fut_mark(p.underlying, p.entry_px) or p.entry_px
+        else:
+            is_call = str(p.right).upper().startswith("C")
+            q = None
+            ch = self.ctx.chain(p.underlying)
+            if ch:
+                q = ch.get(p.strike, is_call)
+            mark = (q.bid if p.is_long else q.ask) if q else p.entry_px
         pnl = (1 if p.is_long else -1) * ((mark or p.entry_px) - p.entry_px) * p.qty
         return {"symbol": p.symbol, "underlying": p.underlying, "side": p.side,
                 "right": p.right, "strike": p.strike, "qty": p.qty,

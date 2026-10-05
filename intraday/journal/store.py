@@ -13,6 +13,7 @@ import datetime as dt
 import json
 import os
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -86,18 +87,25 @@ class Store:
         self.cx.row_factory = sqlite3.Row
         self.cx.executescript(SCHEMA)
         self.cx.commit()
+        # One connection is shared by the engine thread and the API threads:
+        # serialise every op so a UI poll can never collide with a journal
+        # write ("Recursive use of cursors" / "database is locked").
+        self._lock = threading.RLock()
 
     # ---------------- generic helpers
     def q(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
-        return self.cx.execute(sql, args).fetchall()
+        with self._lock:
+            return self.cx.execute(sql, args).fetchall()
 
     def one(self, sql: str, args: tuple = ()):
-        return self.cx.execute(sql, args).fetchone()
+        with self._lock:
+            return self.cx.execute(sql, args).fetchone()
 
     def x(self, sql: str, args: tuple = ()) -> int:
-        cur = self.cx.execute(sql, args)
-        self.cx.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self.cx.execute(sql, args)
+            self.cx.commit()
+            return cur.lastrowid
 
     # ---------------- signals
     def save_signal(self, s) -> int:
@@ -152,13 +160,15 @@ class Store:
                (p.stop, p.age_bars, p.max_prem, int(p.breakeven_done),
                 int(p.partial_done), p.qty, json.dumps(p.log[-50:]), p.position_id))
 
-    def close_position(self, p, brain_version: str = "equal-v0") -> int:
+    def close_position(self, p, brain_version: str = "equal-v0",
+                       cost_per_share: float = 0.0) -> int:
         self.x("UPDATE positions SET status='CLOSED', exit_px=?, exit_ts=?, "
                "exit_reason=? WHERE id=?",
                (p.exit_px, (p.exit_ts.isoformat() if p.exit_ts else None),
                 p.exit_reason, p.position_id))
         sign = 1.0 if p.is_long else -1.0
         pnl = sign * ((p.exit_px or 0.0) - p.entry_px) * p.qty
+        pnl -= max(cost_per_share or 0.0, 0.0) * p.qty   # round-trip costs
         r = (sign * ((p.exit_px or 0.0) - p.entry_px) / p.risk_per_share
              if p.risk_per_share else 0.0)
         return self.x(
@@ -171,11 +181,13 @@ class Store:
              brain_version, str(p.entry_ts.date())))
 
     def book_partial(self, p, exit_px: float, qty: int, reason: str,
-                     exit_ts, brain_version: str = "equal-v0") -> int:
+                     exit_ts, brain_version: str = "equal-v0",
+                     cost_per_share: float = 0.0) -> int:
         """Book a PARTIAL exit (I3): record a trade for `qty` shares and reduce
         the open position's qty. The position stays OPEN with the remainder."""
         sign = 1.0 if p.is_long else -1.0
         pnl = sign * (exit_px - p.entry_px) * qty
+        pnl -= max(cost_per_share or 0.0, 0.0) * qty     # round-trip costs
         r = (sign * (exit_px - p.entry_px) / p.risk_per_share) if p.risk_per_share else 0.0
         tid = self.x(
             "INSERT INTO trades(position_id,symbol,underlying,side,strategy,entry_ts,"

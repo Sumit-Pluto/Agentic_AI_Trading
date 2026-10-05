@@ -17,10 +17,11 @@ LATENCY_GATE_MS = 5000.0        # PDF §7
 
 @dataclass
 class SubmitResult:
-    status: str                 # FILLED | OK | BLOCKED | REJECTED | ERROR
+    status: str                 # FILLED | OK | BLOCKED | REJECTED | TIMEOUT | WORKING | ERROR
     order_id: int | None = None
     broker_order_id: str = ""
     fill_px: float | None = None
+    filled_qty: int | None = None   # shares actually filled (live partials)
     latency_ms: float | None = None
     late: bool = False
     reason: str = ""
@@ -68,12 +69,22 @@ class OrderManager:
         status = str(ack.get("status", "OK")).upper()
         boid = str(ack.get("broker_order_id", ""))
         fill_px = ack.get("fill_px")
+        try:
+            filled_qty = int(float(ack.get("filled_qty"))) if ack.get("filled_qty") else None
+        except (TypeError, ValueError):
+            filled_qty = None
         oid = self.store.save_order(intent, status=status, broker=self.broker.name,
                                     date=now.date(), broker_order_id=boid,
                                     latency_ms=latency_ms)
         if status == "FILLED" and fill_px:
             self.store.fill_order(oid, float(fill_px))
+        if status in ("TIMEOUT", "WORKING"):
+            # A live order left working at the broker is journalled LOUDLY: the
+            # engine tracks nothing for it, so a human must resolve the book.
+            self.store.set_order_status(oid, f"{status}:{boid or 'no-id'}"[:60])
         return SubmitResult(status=status, order_id=oid, broker_order_id=boid,
                             fill_px=(float(fill_px) if fill_px else None),
+                            filled_qty=filled_qty,
                             latency_ms=latency_ms, late=late,
-                            reason=("latency>5s" if late else "ok"), ack=ack)
+                            reason=str(ack.get("reason") or ("latency>5s" if late else "ok"))[:120],
+                            ack=ack)

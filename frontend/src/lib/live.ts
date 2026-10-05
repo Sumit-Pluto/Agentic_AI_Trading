@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 // ---- snapshot types (mirror intraday/server/runner._snapshot) ----
 export interface Regime { on?: boolean; scalar?: number; detail?: string; vetoes?: string[]; avg?: number }
 export interface EngineState {
-  mode?: string; trading_mode?: string; cap_state?: string; data_source?: string; live_data?: boolean
+  mode?: string; trading_mode?: string; broker?: string; cap_state?: string; data_source?: string; live_data?: boolean
   paused?: boolean; halted?: boolean; now?: string; square_off?: boolean
   equity?: number | null; realized?: number | null; unrealized?: number | null
   day_pnl?: number | null; n_positions?: number; entries?: number; vix?: number | null; regime?: Regime
@@ -35,10 +35,13 @@ export interface Chain {
   symbol: string; spot: number | null; atm: number | null; expiry: string; lot_size: number
   features: Record<string, number | null>; rows: ChainRow[]
 }
+export interface ActivityEvent { ts: string; stage: string; msg: string }
+export interface ScanProg { symbol: string; role: string; bars: number; chain: boolean }
 export interface Snapshot {
   type?: string; seq: number; state: EngineState; positions: Position[]; signals: Signal[]
   agent_rows: AgentRow[]; chains: Record<string, Chain>; equity_point?: { t: string; equity: number | null }
   budget?: Budget; funds?: Record<string, unknown> | null
+  activity?: ActivityEvent[]; scan?: ScanProg[]
 }
 
 // ---- REST ----
@@ -47,9 +50,19 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (!r.ok) throw new Error(`${path} → ${r.status}`)
   return r.json() as Promise<T>
 }
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body) })
+export async function apiPost<T>(path: string, body: unknown, retry = true): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const tok = localStorage.getItem('intraday_token')
+  if (tok) headers['Authorization'] = `Bearer ${tok}`
+  const r = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) })
+  if (r.status === 401 && retry) {
+    // server has INTRADAY_API_TOKEN set: prompt once, remember, retry
+    const t = window.prompt('API token required (server INTRADAY_API_TOKEN):')
+    if (t) {
+      localStorage.setItem('intraday_token', t)
+      return apiPost<T>(path, body, false)
+    }
+  }
   return r.json() as Promise<T>
 }
 

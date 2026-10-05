@@ -133,3 +133,61 @@ def test_exit_hold_updates_max_prem():
     p = _pos()
     d = manage(p, _mkt(24810, 105), {"target_r_1": 5, "target_r_2": 9})
     assert d.action == "HOLD" and p.max_prem >= 105 and p.age_bars == 1
+
+
+# ── FUT legs: direction-aware exits, budget, dedup ────────────────────────────
+def _fut_pos(side="BUY", entry=24800.0, stop=24760.0, rps=40.0):
+    return Position(symbol="NIFTY-FUT", qty=50, side=side, entry_px=entry,
+                    entry_ts=ist_now(), stop=stop, risk_per_share=rps,
+                    right="FUT", strike=0, lot_size=50, underlying="NIFTY",
+                    entry_spot=entry, max_prem=entry, max_fav_spot=entry)
+
+
+def _fut_mkt(mark):
+    return ExitMarket(now=ist_now(), spot=mark, leg_bid=mark, leg_ask=mark,
+                      leg_mid=mark, bars=None, vwap=None, is_square_off=False)
+
+
+def test_exit_fut_follows_trade_direction():
+    hold_cfg = {"target_r_1": 5, "target_r_2": 9}
+    # long FUT above its stop HOLDS (a CE/PE-only read stops it instantly)
+    d = manage(_fut_pos("BUY"), _fut_mkt(24810), hold_cfg)
+    assert d.action == "HOLD", d.reason
+    d = manage(_fut_pos("BUY"), _fut_mkt(24750), {})
+    assert d.action == "EXIT" and "I1" in d.reason
+    # short FUT mirrors
+    d = manage(_fut_pos("SELL", stop=24840), _fut_mkt(24790), hold_cfg)
+    assert d.action == "HOLD", d.reason
+    d = manage(_fut_pos("SELL", stop=24840), _fut_mkt(24850), {})
+    assert d.action == "EXIT" and "I1" in d.reason
+
+
+def test_governor_counts_fut_by_stop_risk():
+    g = Governor({"total_budget": 100000, "soft_cap_pct": 80, "hard_cap_pct": 90})
+    fut = _fut_pos("BUY")                       # 25k mark, 40 pts of stop risk
+    assert g.deployed_premium([fut]) == 40 * 50  # not 24800 * 50
+    assert g.utilisation_pct([fut]) == 2.0
+    assert g.can_open_new([fut], extra_premium=10000)[0] is True
+    short = _fut_pos("SELL", stop=24840)
+    assert g.deployed_premium([short]) == 40 * 50  # shorts count too
+
+
+def test_rules_fut_dedup_is_side_aware():
+    re = RuleEngine({"square_off_time": "15:15", "no_new_entries_after": "15:00",
+                     "max_positions": 4, "max_lots_per_symbol": 10})
+    now = _weekday_10am()
+    held = _fut_pos("BUY")
+
+    def _fut_intent(side):
+        return OrderIntent(symbol="NIFTY-FUT", side=side, qty=50,
+                           underlying="NIFTY", right="FUT", lot_size=50)
+    ok, why = re.check(_fut_intent("BUY"), now, [held])
+    assert ok is False and "duplicate" in why.lower()
+    ok, _ = re.check(_fut_intent("SELL"), now, [held])
+    assert ok is True                              # opposite side is not a dup
+    # options behaviour unchanged: same right still blocks
+    opt_held = Position(symbol="NIFTY24800CE", qty=50, side="BUY", entry_px=100,
+                        entry_ts=now, stop=0, risk_per_share=20, right="CE",
+                        underlying="NIFTY", lot_size=50)
+    ok, _ = re.check(_intent(underlying="NIFTY", right="CE"), now, [opt_held])
+    assert ok is False

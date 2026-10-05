@@ -64,7 +64,15 @@ class FakeContext:
     def positioning(self, s): return {"d_pcr": 0.10}
     def vix(self): return self._vix
     def prev_day(self, s): return {"pdh": 24850, "pdl": 24600, "pdc": 24700, "pdo": 24650}
-    def now(self): return ist_now()
+
+    def now(self):
+        # fixed mid-session clock: session context (opening range, elapsed
+        # minutes) must not depend on the wall-clock hour the suite runs at.
+        from intraday.options.models import IST
+        d = dt.datetime(2026, 9, 30, 10, 30, tzinfo=IST)
+        while d.weekday() >= 5:
+            d += dt.timedelta(days=1)
+        return d
 
 
 def test_all_agents_run_without_raising():
@@ -105,6 +113,43 @@ def test_uptrend_fires_buy_and_picks_a_call():
     assert s.instrument["ask"] > 0 and s.instrument["token"]
 
 
+def test_session_ctx_slices_todays_bars_from_multiday_cache():
+    from intraday.intelligence.scanner import _session_ctx
+    bars = _bars([24000 + i * 5 for i in range(240)])   # ~3 sessions cached
+    cfg = {"bar_timeframe": "5m", "or_minutes": 15,
+           "session_open": "09:15", "session_close": "15:30"}
+    s = _session_ctx(bars, cfg, None, FakeContext({}, None).now())  # 10:30
+    assert s["minutes_since_open"] == 75.0
+    assert s["minutes_to_close"] == 300.0
+    # today's slice = last 16 bars (75 // 5 + 1); levels come from it alone
+    assert s["day_open"] == float(bars["open"].iloc[-16])
+    assert s["or_hi"] == float(bars["high"].iloc[-16:-13].max())
+    # clockless keeps the legacy full-bars read
+    leg = _session_ctx(bars, cfg)
+    assert leg["minutes_since_open"] == 240 * 5
+    assert leg["day_open"] == float(bars["open"].iloc[0])
+
+
+def test_sim_market_chains_have_ivs_and_greeks():
+    """Sim chains are anchored to sim time: IVs invert, greeks are alive, and
+    sessions can roll without the chains decaying into 'expired' (t=0 kills
+    IVs → delta 0 → the V/F agents and sizing silently fall back)."""
+    from intraday.data.sim import SimContext
+    from intraday.options import greeks_for
+    ctx = SimContext({"universe": ["NIFTY"], "bar_timeframe": "5m"})
+    ch = ctx.chain("NIFTY")
+    assert ch is not None and ch.asof == ctx.now() and not ch.expired
+    atm = ch.get(ch.atm, True)
+    assert atm is not None and (atm.iv or 0) > 0
+    g = greeks_for(atm, ch)
+    assert 0.3 < g["delta"] < 0.7 and g["gamma"] > 0
+    for _ in range(80):                       # roll across sessions
+        ctx.step()
+    ch2 = ctx.chain("NIFTY")
+    assert ch2.asof == ctx.now() and not ch2.expired
+    assert (ch2.get(ch2.atm, True).iv or 0) > 0
+
+
 def test_vix_spike_vetoes_the_session():
     up = _bars([24000 + i * 25 for i in range(45)])
     ctx = FakeContext({"NIFTY": up}, _bullish_chain(), vix=30.0)   # VIX spike
@@ -112,3 +157,21 @@ def test_vix_spike_vetoes_the_session():
                                  {"bar_timeframe": "5m"}).scan()
     assert regime["on"] is False and sigs == []
     assert any("VIX" in v for v in regime["vetoes"])
+
+
+def test_regime_threshold_is_configurable():
+    from intraday.agents.base import AgentResult
+    from intraday.intelligence import regime_gate
+    rs = [AgentResult(agent="R1", family="R", score_buy=35.0, score_sell=35.0)]
+    assert regime_gate(rs)["on"] is False                      # default 40
+    assert regime_gate(rs, min_avg=30.0)["on"] is True
+    assert regime_gate(rs, min_avg=36.0)["on"] is False
+    # threshold also flows through the scanner cfg
+    up = _bars([24000 + i * 25 for i in range(45)])
+    ctx = FakeContext({"NIFTY": up}, _bullish_chain(), vix=12.0)
+    base = {"bar_timeframe": "5m", "score_threshold": 55, "score_margin": 5,
+            "or_minutes": 15, "session_open": "09:15", "session_close": "15:30"}
+    assert Scanner(ctx, Brain.equal(), dict(base, regime_min_avg=95.0)
+                   ).scan()[1]["on"] is False
+    assert Scanner(ctx, Brain.equal(), dict(base, regime_min_avg=10.0)
+                   ).scan()[1]["on"] is True

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ActivityView } from './components/Activity'
 import { AgentsView } from './components/Agents'
 import { ChainView } from './components/Chain'
 import { Cockpit } from './components/Cockpit'
@@ -8,7 +9,7 @@ import { Reporting } from './components/Reporting'
 import { Settings } from './components/Settings'
 import { useLive } from './lib/live'
 
-const TABS = ['Cockpit', 'Option Chain', 'Agents', 'Journal', 'Reporting', 'Settings'] as const
+const TABS = ['Cockpit', 'Option Chain', 'Agents', 'Journal', 'Reporting', 'Settings', 'Activity'] as const
 type Tab = typeof TABS[number]
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
         {tab === 'Journal' && <Journal />}
         {tab === 'Reporting' && <Reporting />}
         {tab === 'Settings' && <Settings />}
+        {tab === 'Activity' && <ActivityView snap={snap} />}
       </main>
     </div>
   )

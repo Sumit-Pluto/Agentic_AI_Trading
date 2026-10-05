@@ -39,7 +39,10 @@ DEFAULTS: dict = {
     "warmup_lookback_minutes": 1500,           # seed bars from /api/candles at start
 
     # ── money & risk / capital allocation (PDF §2.1; mirrors swing swager) ──
-    "total_budget": 100000.0,                  # ₹ this AI system may deploy of the account (self-cap)
+    # ₹3L default: at 1% risk/trade a ₹1L budget cannot afford ONE Nifty lot
+    # (~₹1.5k stop-risk) and the engine would size every signal to zero lots —
+    # signals fire, nothing ever trades. 3L is the honest minimum for NFO.
+    "total_budget": 300000.0,                  # ₹ this AI system may deploy of the account (self-cap)
     "soft_cap_pct": 80.0,                      # yellow warning at this budget utilisation
     "hard_cap_pct": 90.0,                      # block NEW entries at/above this utilisation
     "global_sl_pct": 5.0,                      # session MTM stop as % of budget -> flatten + halt
@@ -52,7 +55,7 @@ DEFAULTS: dict = {
     "margin_safety_factor": 1.10,              # require free margin >= required * this (shared account)
     "atr_stop_mult": 1.5,                      # stop distance floor = mult * ATR(5m)
     "max_prem_loss_pct": 40.0,                 # secondary premium stop for long options
-    "equity_rupees": 100000.0,                 # legacy alias; total_budget takes precedence
+    "equity_rupees": 300000.0,                 # legacy alias; total_budget takes precedence
 
     # ── exits (I0–I8) ─────────────────────────────────────────────────────
     "target_r_1": 1.0, "partial_pct_1": 50.0,  # T1: book 50% at +1R, move to breakeven
@@ -64,12 +67,16 @@ DEFAULTS: dict = {
     # ── decision thresholds ───────────────────────────────────────────────
     "score_threshold": 60.0,                    # min composite to fire
     "score_margin": 10.0,                       # winning side must beat the other by this
+    "regime_min_avg": 40.0,                     # regime ON needs R-family avg >= this
     "atm_window_strikes": 10,                    # +/- strikes to fetch around ATM
 
     # ── mode / safety ─────────────────────────────────────────────────────
     "mode": "paper",                            # paper | live (live gated by typed confirm)
     "paused": False,
     "slippage_pct": 0.10,                        # paper-fill slippage assumption
+    "live_confirm_timeout_s": 12.0,              # live: seconds to await a broker fill verdict
+    "live_fill_poll_s": 1.0,                     # live: order-book poll cadence during confirm
+    "roundtrip_cost_per_lot": 0.0,               # ₹ round-trip costs (brokerage+STT+etc) per lot, booked into trade P&L
 
     # ── server / demo ─────────────────────────────────────────────────────
     "engine_mode": "sim",                        # sim (simulated market) | live (Gateway)
