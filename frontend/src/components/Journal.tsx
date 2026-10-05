@@ -9,6 +9,14 @@ interface Trade {
 interface Order {
   id: number; symbol: string; side: string; qty: number; order_type: string; status: string
   latency_ms: number | null; reason: string; date: string
+  limit_px: number | null; fill_px: number | null
+}
+
+function slipBps(o: Order): string {
+  if (o.limit_px == null || o.fill_px == null || o.limit_px <= 0) return '—'
+  const dev = ((o.fill_px - o.limit_px) / o.limit_px) * 10000
+  const cost = o.side?.toUpperCase().startsWith('B') ? dev : -dev
+  return `${cost >= 0 ? '+' : ''}${cost.toFixed(0)}`
 }
 
 function usePoll<T>(path: string, ms = 3000): T | null {
@@ -50,7 +58,7 @@ export function Journal() {
       </div>
       <div className="card scroll" style={{ minHeight: 0 }}>
         <table>
-          <thead><tr><th style={{ textAlign: 'left' }}>Order</th><th>Side</th><th>Qty</th><th>Status</th><th>Lat</th></tr></thead>
+          <thead><tr><th style={{ textAlign: 'left' }}>Order</th><th>Side</th><th>Qty</th><th>Status</th><th>Decide</th><th>Fill</th><th title="execution cost: fill vs decision price (bps, + = paid away)">Slip</th><th>Lat</th></tr></thead>
           <tbody>
             {orders.map((o) => (
               <tr key={o.id}>
@@ -58,10 +66,13 @@ export function Journal() {
                 <td>{o.side}</td>
                 <td className="mono">{o.qty}</td>
                 <td><span className="pill" style={{ color: o.status === 'FILLED' ? 'var(--green)' : o.status.startsWith('BLOCK') ? 'var(--amber)' : 'var(--dim)' }}>{o.status}</span></td>
+                <td className="mono dim">{num(o.limit_px)}</td>
+                <td className="mono">{num(o.fill_px)}</td>
+                <td className="mono dim">{slipBps(o)}</td>
                 <td className="mono dim">{o.latency_ms != null ? `${Math.round(o.latency_ms)}ms` : '—'}</td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan={5} className="dim">no orders yet</td></tr>}
+            {orders.length === 0 && <tr><td colSpan={8} className="dim">no orders yet</td></tr>}
           </tbody>
         </table>
       </div>

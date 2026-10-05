@@ -13,6 +13,7 @@ const KNOBS: { key: string; label: string; group: string }[] = [
   { key: 'max_lots_per_symbol', label: 'Max lots / symbol', group: 'Money & Risk' },
   { key: 'max_prem_loss_pct', label: 'Premium stop (%)', group: 'Money & Risk' },
   { key: 'roundtrip_cost_per_lot', label: 'Costs / lot RT (₹)', group: 'Money & Risk' },
+  { key: 'paper_exec_delay_s', label: 'Paper exec delay (s)', group: 'Money & Risk' },
   { key: 'score_threshold', label: 'Signal threshold', group: 'Decision' },
   { key: 'regime_min_avg', label: 'Regime min avg', group: 'Decision' },
   { key: 'score_margin', label: 'Direction margin', group: 'Decision' },

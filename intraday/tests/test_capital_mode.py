@@ -35,7 +35,8 @@ def test_governor_budget_caps_and_global_sl():
 def _server_client():
     tmp = tempfile.mkdtemp()
     cfg = os.path.join(tmp, "cfg.json")
-    open(cfg, "w").write('{"demo_step_seconds": 0.1, "total_budget": 150000}')
+    open(cfg, "w").write('{"demo_step_seconds": 0.1, "total_budget": 150000,'
+                        ' "paper_exec_delay_s": 0}')
     os.environ["INTRADAY_CONFIG"] = cfg
     os.environ["INTRADAY_DB"] = os.path.join(tmp, "intraday.db")
     # ensure no gateway creds leak in from the environment

@@ -223,6 +223,46 @@ class Store:
                      (str(date),))
         return float(r["s"]) if r else 0.0
 
+    def execution_quality(self) -> dict:
+        """Realized execution deviation across FILLED orders: decision price
+        (limit_px) vs actual fill (fill_px), plus submit→fill delay. Positive
+        cost bps = paid away (bought higher / sold lower). Unfilled orders
+        (BLOCKED/REJECTED/TIMEOUT/WORKING) never enter the stats."""
+        rows = self.q("SELECT side, limit_px, fill_px, submitted_ts, filled_ts "
+                      "FROM orders WHERE status='FILLED'")
+        buys: list[float] = []
+        sells: list[float] = []
+        delays: list[float] = []
+        for r in rows:
+            try:
+                lim, fill = float(r["limit_px"] or 0), float(r["fill_px"] or 0)
+            except (TypeError, ValueError):
+                continue
+            if lim <= 0 or fill <= 0:
+                continue
+            dev_bps = (fill - lim) / lim * 10000.0
+            if str(r["side"] or "").upper().startswith("B"):
+                buys.append(dev_bps)          # bought higher = positive cost
+            else:
+                sells.append(-dev_bps)        # sold lower = positive cost
+            try:
+                sub, fld = float(r["submitted_ts"] or 0), float(r["filled_ts"] or 0)
+            except (TypeError, ValueError):
+                continue
+            if sub > 0 and fld >= sub:
+                delays.append((fld - sub) * 1000.0)
+
+        def _avg(xs: list[float]) -> float | None:
+            return round(sum(xs) / len(xs), 1) if xs else None
+
+        all_costs = buys + sells
+        return {"fills": len(all_costs),
+                "avg_cost_bps": _avg(all_costs),
+                "avg_cost_bps_buy": _avg(buys),
+                "avg_cost_bps_sell": _avg(sells),
+                "max_cost_bps": (round(max(all_costs), 1) if all_costs else None),
+                "avg_fill_delay_ms": _avg(delays)}
+
     def job(self, name: str) -> int:
         return self.x("INSERT INTO jobs(name,started,status) VALUES(?,?,?)",
                       (name, dt.datetime.now().isoformat(timespec="seconds"), "RUNNING"))

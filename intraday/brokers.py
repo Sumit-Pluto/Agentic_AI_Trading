@@ -22,13 +22,21 @@ def _side_sign(side: str) -> int:
 
 
 class PaperBroker(Broker):
-    """Deterministic simulated broker. Fills at intent.limit_px (the marketable
-    price the strategy computed: ask for a buy, bid for a sell) moved adversely
-    by `slippage_pct`. A MKT intent must carry a reference price in limit_px."""
+    """Simulated broker that bleeds like the live one. Fills at the LIVE touch
+    (ask for a buy, bid for a sell — the spread is always paid) re-read at
+    execution time through `quote_provider`, after an `exec_delay_s` pause that
+    stands in for the submit→exchange→fill round trip, then moved adversely by
+    `slippage_pct`. Without a provider it falls back to intent.limit_px (the
+    marketable price the strategy computed); a MKT intent must then carry a
+    reference price in limit_px. With no provider and no delay it is fully
+    deterministic (the backtest behaviour)."""
     name = "paper"
 
-    def __init__(self, slippage_pct: float = 0.10):
+    def __init__(self, slippage_pct: float = 0.10, quote_provider=None,
+                 exec_delay_s: float = 0.0):
         self.slippage = slippage_pct / 100.0
+        self.quote_provider = quote_provider  # intent -> (bid, ask) | None
+        self.exec_delay_s = min(max(float(exec_delay_s or 0.0), 0.0), 30.0)
         self._orders: dict[str, dict] = {}
         self._positions: dict[str, dict] = {}   # symbol -> netted position
         self._seq = 0
@@ -36,7 +44,22 @@ class PaperBroker(Broker):
     def place(self, intent: OrderIntent) -> dict:
         self._seq += 1
         oid = f"PAPER-{self._seq}"
+        if self.exec_delay_s > 0:
+            time.sleep(self.exec_delay_s)        # the order travels; the market moves
         ref = intent.limit_px
+        if self.quote_provider is not None:      # re-price at the live touch
+            try:
+                touch = self.quote_provider(intent)
+            except Exception:
+                touch = None
+            if touch:
+                try:
+                    bid, ask = float(touch[0]), float(touch[1])
+                except (TypeError, ValueError, IndexError):
+                    bid = ask = 0.0
+                live = ask if _side_sign(intent.side) > 0 else bid
+                if live and live > 0:
+                    ref = live
         if ref is None or ref <= 0:
             return {"broker_order_id": oid, "status": "REJECTED",
                     "reason": "paper fill needs a reference price in limit_px"}

@@ -59,6 +59,7 @@ class SessionLoop:
         self._flatten_reason = ""
         self._day: dt.date | None = None       # session rollover tracker
         self._last_scan_at: dt.datetime | None = None   # scan-cadence gate
+        self._refresh_paper_realism()
 
     def _log(self, stage: str, msg: str) -> None:
         """Append one background-activity event (ring buffer, never raises)."""
@@ -73,6 +74,46 @@ class SessionLoop:
         order manager around it. Called by the runner on a mode toggle."""
         self.broker = broker
         self.orders = OrderManager(broker, self.store, self.rules, self.cfg)
+        self._refresh_paper_realism()
+
+    def _paper_touch(self, intent) -> tuple[float, float] | None:
+        """Live (bid, ask) for a paper order's instrument — options from the
+        chain leg, futures from the futures mark. Never raises (None → the
+        broker falls back to the decision price)."""
+        try:
+            if str(getattr(intent, "right", "")).upper() == "FUT":
+                m = self._fut_mark(getattr(intent, "underlying", "") or "", 0.0)
+                return (m, m) if m > 0 else None
+            is_call = str(getattr(intent, "right", "")).upper().startswith("C")
+            q, _ch = self._leg_quote(
+                getattr(intent, "underlying", "") or "",
+                float(getattr(intent, "strike", 0) or 0), is_call)
+            if q is not None and q.bid > 0 and q.ask > 0:
+                return (float(q.bid), float(q.ask))
+            return None
+        except Exception:
+            return None
+
+    def _refresh_paper_realism(self) -> None:
+        """Apply the paper-realism knobs to a paper broker (live-touch
+        re-pricing + execution delay). Runs on init, on broker swaps, and on
+        every tick so Settings edits apply without a restart. Never raises."""
+        try:
+            if getattr(self.broker, "name", "") != "paper":
+                return
+            use_touch = bool(self.cfg.get("paper_use_live_touch", True))
+            self.broker.quote_provider = self._paper_touch if use_touch else None
+        except Exception:
+            pass
+        try:
+            if getattr(self.broker, "name", "") != "paper":
+                return
+            d = float(self.cfg.get("paper_exec_delay_s", 1.0) or 0.0)
+            self.broker.exec_delay_s = min(max(d, 0.0), 30.0)
+        except (TypeError, ValueError):
+            pass
+        except Exception:
+            pass
 
     # ---------- helpers ----------
     def _paused(self) -> bool:
@@ -117,6 +158,7 @@ class SessionLoop:
     def step(self, now: dt.datetime | None = None) -> dict:
         now = now or self.ctx.now()
         self.equity = self.governor.budget()          # pick up live budget edits
+        self._refresh_paper_realism()                 # pick up realism-knob edits
         # session rollover: a long-running server must not carry yesterday's
         # halt/drawdown into today (positions are squared off daily anyway).
         today = now.date()

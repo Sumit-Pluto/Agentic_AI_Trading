@@ -43,7 +43,7 @@ def test_live_allowed_on_live_engine_with_client(tmp_path, monkeypatch):
 def _server_client(monkeypatch, token=None):
     tmp = tempfile.mkdtemp()
     cfg = os.path.join(tmp, "cfg.json")
-    open(cfg, "w").write('{"demo_step_seconds": 60.0}')
+    open(cfg, "w").write('{"demo_step_seconds": 60.0, "paper_exec_delay_s": 0}')
     monkeypatch.setenv("INTRADAY_CONFIG", cfg)
     monkeypatch.setenv("INTRADAY_DB", os.path.join(tmp, "intraday.db"))
     monkeypatch.delenv("GATEWAY_CLIENT_ID", raising=False)

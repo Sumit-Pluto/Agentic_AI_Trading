@@ -176,7 +176,8 @@ FUTCFG = {"bar_timeframe": "5m", "score_threshold": 55, "score_margin": 5,
           "equity_rupees": 300000.0, "risk_per_trade_pct": 1.0,
           "max_daily_loss_rupees": 6000.0, "max_positions": 4, "max_lots_per_symbol": 10,
           "max_prem_loss_pct": 40, "target_r_1": 1.0, "target_r_2": 2.0,
-          "futures_available": True, "selector_max_spread_pct": 0.01}
+          "futures_available": True, "selector_max_spread_pct": 0.01,
+          "paper_exec_delay_s": 0}
 
 
 def test_loop_opens_fut_position_when_spread_wide(tmp_path):

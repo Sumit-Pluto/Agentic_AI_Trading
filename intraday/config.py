@@ -76,6 +76,8 @@ DEFAULTS: dict = {
     "slippage_pct": 0.10,                        # paper-fill slippage assumption
     "live_confirm_timeout_s": 12.0,              # live: seconds to await a broker fill verdict
     "live_fill_poll_s": 1.0,                     # live: order-book poll cadence during confirm
+    "paper_use_live_touch": True,                # paper fills re-price at the live touch (spread always paid)
+    "paper_exec_delay_s": 1.0,                   # paper fills occur this late, like a real round trip
     "roundtrip_cost_per_lot": 0.0,               # ₹ round-trip costs (brokerage+STT+etc) per lot, booked into trade P&L
 
     # ── server / demo ─────────────────────────────────────────────────────

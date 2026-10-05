@@ -11,7 +11,8 @@ def _client():
     tmp = tempfile.mkdtemp()
     cfg = os.path.join(tmp, "cfg.json")
     with open(cfg, "w") as f:
-        f.write('{"demo_step_seconds": 0.1, "score_threshold": 52, "score_margin": 3}')
+        f.write('{"demo_step_seconds": 0.1, "score_threshold": 52, "score_margin": 3,'
+                ' "paper_exec_delay_s": 0}')
     os.environ["INTRADAY_CONFIG"] = cfg
     os.environ["INTRADAY_DB"] = os.path.join(tmp, "intraday.db")
     from intraday.server.app import app

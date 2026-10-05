@@ -89,7 +89,8 @@ CFG = {"bar_timeframe": "5m", "score_threshold": 55, "score_margin": 5,
        "no_new_entries_after": "15:00", "square_off_time": "15:15",
        "equity_rupees": 300000.0, "risk_per_trade_pct": 1.0,
        "max_daily_loss_rupees": 6000.0, "max_positions": 4, "max_lots_per_symbol": 10,
-       "max_prem_loss_pct": 40, "target_r_1": 1.0, "target_r_2": 2.0}
+       "max_prem_loss_pct": 40, "target_r_1": 1.0, "target_r_2": 2.0,
+       "paper_exec_delay_s": 0}                # keep the suite fast (delay covered at broker level)
 
 
 def test_entry_then_target_exit(tmp_path):

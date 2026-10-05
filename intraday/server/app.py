@@ -190,6 +190,7 @@ def reporting():
                           / max(1, n - len(wins)), 0),
         "max_drawdown": round(dd, 0),
         "avg_latency_ms": round(sum(lat_vals) / len(lat_vals), 1) if lat_vals else None,
+        "execution": _store().execution_quality(),
         "by_strategy": _group("strategy"), "by_symbol": _group("underlying"),
         "by_exit": _group("exit_reason"),
     }

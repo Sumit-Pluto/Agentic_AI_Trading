@@ -108,6 +108,116 @@ def test_paper_short_pnl_sign(tmp_path):
     store.close()
 
 
+def test_paper_fills_at_live_touch_like_real_execution():
+    """With a quote provider the paper broker re-prices at execution time:
+    buys pay the live ask, sells take the live bid (spread always paid),
+    then slippage hurts. A stale decision price is ignored."""
+    touch = {"NIFTY24800CE": (99.0, 101.0)}
+    b = PaperBroker(slippage_pct=0.10,
+                    quote_provider=lambda i: touch.get(i.symbol))
+    buy = OrderIntent(symbol="NIFTY24800CE", side="BUY", qty=50,
+                      limit_px=60.0)                    # stale decision price
+    r = b.place(buy)
+    assert r["status"] == "FILLED"
+    assert r["fill_px"] == round(101.0 * 1.001, 2)      # live ask + slippage
+    sell = OrderIntent(symbol="NIFTY24800CE", side="SELL", qty=50,
+                       limit_px=150.0)
+    r = b.place(sell)
+    assert r["fill_px"] == round(99.0 * 0.999, 2)       # live bid - slippage
+
+
+def test_paper_falls_back_to_decision_price():
+    """No touch (no provider / error / garbage / one-sided book) → fill at
+    the decision price instead of failing. Never invent a price."""
+    def _buy(broker):
+        return broker.place(OrderIntent(symbol="X", side="BUY", qty=10,
+                                        limit_px=100.0))
+
+    assert _buy(PaperBroker(0.10))["fill_px"] == round(100.0 * 1.001, 2)
+
+    def _boom(intent):
+        raise RuntimeError("quoter down")
+    assert _buy(PaperBroker(0.10, quote_provider=_boom))["fill_px"] == \
+        round(100.0 * 1.001, 2)
+    assert _buy(PaperBroker(0.10, quote_provider=lambda i: ("xx", None)))["fill_px"] == \
+        round(100.0 * 1.001, 2)
+    assert _buy(PaperBroker(0.10, quote_provider=lambda i: (99.0, 0.0)))["fill_px"] == \
+        round(100.0 * 1.001, 2)                          # no ask → limit
+    # nothing at all to price from → honest reject, not a zero fill
+    r = PaperBroker(0.10).place(OrderIntent(symbol="X", side="BUY", qty=10))
+    assert r["status"] == "REJECTED"
+
+
+def test_paper_exec_delay_ages_the_fill():
+    import time as _t
+    b = PaperBroker(0.10, exec_delay_s=0.05)
+    t0 = _t.perf_counter()
+    r = b.place(OrderIntent(symbol="X", side="BUY", qty=10, limit_px=100.0))
+    assert r["status"] == "FILLED" and _t.perf_counter() - t0 >= 0.05
+
+
+def test_loop_wires_live_touch_into_paper(tmp_path):
+    """End of the wire: a loop-driven paper broker ignores a stale decision
+    price and fills at the chain touch; opting out restores limit fills."""
+    from intraday.contracts import Brain
+    from intraday.journal.store import Store
+    from intraday.runtime import SessionLoop
+    from intraday.tests.test_selector import FutReplayContext
+    from intraday.tests.test_session_loop import CFG, ReplayContext
+
+    store = Store(tmp_path / "w.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, dict(CFG, paper_exec_delay_s=0),
+                       brain=Brain.equal())
+    ch = ctx.chain("NIFTY")
+    leg = ch.get(ch.atm, True)
+    stale = OrderIntent(symbol=leg.tsym, side="BUY", qty=50, limit_px=1.0,
+                        underlying="NIFTY", strike=leg.strike, right="CE")
+    r = loop.broker.place(stale)
+    assert r["fill_px"] > 50.0                    # live ask, not the 1.0 stale
+    assert abs(r["fill_px"] - round(leg.ask * 1.001, 2)) < 0.02
+
+    off = SessionLoop(ctx, store, dict(CFG, paper_exec_delay_s=0,
+                                       paper_use_live_touch=False),
+                      brain=Brain.equal())
+    r2 = off.broker.place(stale)
+    assert r2["fill_px"] == round(1.0 * 1.001, 2)  # opted out → limit fill
+
+    # futures legs quote at the futures mark
+    floop = SessionLoop(FutReplayContext(), store, dict(CFG, paper_exec_delay_s=0),
+                        brain=Brain.equal())
+    fut = OrderIntent(symbol="NIFTY-FUT", side="SELL", qty=50, limit_px=1.0,
+                      underlying="NIFTY", right="FUT")
+    rf = floop.broker.place(fut)
+    assert abs(rf["fill_px"] - round(24805.0 * 0.999, 2)) < 0.02
+    store.close()
+
+
+def test_execution_quality_stats(tmp_path):
+    """Decision-vs-fill deviation: buys paying up and sells giving down both
+    read as positive cost bps; unfilled orders never enter the stats."""
+    store = Store(tmp_path / "q.db")
+    now = ist_now()
+    b = OrderIntent(symbol="A", side="BUY", qty=10, limit_px=100.0)
+    s = OrderIntent(symbol="A", side="SELL", qty=10, limit_px=100.0)
+    o1 = store.save_order(b, status="FILLED", broker="paper", date=now.date())
+    store.fill_order(o1, 101.0)                       # +100 bps cost
+    o2 = store.save_order(s, status="FILLED", broker="paper", date=now.date())
+    store.fill_order(o2, 99.0)                        # +100 bps cost
+    store.save_order(b, status="BLOCKED:halt", broker="paper", date=now.date())
+    q = store.execution_quality()
+    assert q["fills"] == 2
+    assert q["avg_cost_bps"] == 100.0
+    assert q["avg_cost_bps_buy"] == 100.0 and q["avg_cost_bps_sell"] == 100.0
+    assert q["max_cost_bps"] == 100.0
+    assert q["avg_fill_delay_ms"] is not None and q["avg_fill_delay_ms"] >= 0
+
+    empty = Store(tmp_path / "e.db")
+    q0 = empty.execution_quality()
+    assert q0["fills"] == 0 and q0["avg_cost_bps"] is None
+    store.close(); empty.close()
+
+
 def test_roundtrip_costs_booked_into_pnl(tmp_path):
     """Configured per-share costs (brokerage/STT/...) reduce booked P&L, so the
     daily-loss kill and the reports see net — not fantasy gross — numbers."""

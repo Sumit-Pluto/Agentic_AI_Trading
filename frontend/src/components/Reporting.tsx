@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react'
 import { apiGet, inr, pnlClass, signed } from '../lib/live'
 
 interface Group { n: number; pnl: number; wins: number }
+interface Exec {
+  fills: number; avg_cost_bps: number | null; avg_cost_bps_buy: number | null
+  avg_cost_bps_sell: number | null; max_cost_bps: number | null; avg_fill_delay_ms: number | null
+}
 interface Report {
   trades: number; wins: number; win_rate: number; total_pnl: number; avg_win: number
-  avg_loss: number; max_drawdown: number; avg_latency_ms: number | null
+  avg_loss: number; max_drawdown: number; avg_latency_ms: number | null; execution?: Exec | null
   by_strategy: Record<string, Group>; by_symbol: Record<string, Group>; by_exit: Record<string, Group>
 }
 
@@ -16,7 +20,9 @@ export function Reporting() {
   }, [])
   if (!r) return <div className="dim">loading…</div>
 
-  const tiles = [
+  const ex = r.execution
+  const bps = (v: number | null | undefined) => v == null ? '—' : `${v}bps`
+  const tiles: { k: string; v: string; c?: string; t?: string }[] = [
     { k: 'Trades', v: String(r.trades) },
     { k: 'Win rate', v: `${r.win_rate}%` },
     { k: 'Total P&L', v: signed(r.total_pnl), c: pnlClass(r.total_pnl) },
@@ -24,12 +30,16 @@ export function Reporting() {
     { k: 'Avg loss', v: inr(r.avg_loss), c: 'neg' },
     { k: 'Max drawdown', v: inr(r.max_drawdown), c: 'neg' },
     { k: 'Avg latency', v: r.avg_latency_ms != null ? `${r.avg_latency_ms}ms` : '—' },
+    { k: 'Slip (buy)', v: bps(ex?.avg_cost_bps_buy), c: 'neg', t: 'avg execution cost on buys: fill vs decision (bps)' },
+    { k: 'Slip (sell)', v: bps(ex?.avg_cost_bps_sell), c: 'neg', t: 'avg execution cost on sells: fill vs decision (bps)' },
+    { k: 'Fill delay', v: ex?.avg_fill_delay_ms != null ? `${Math.round(ex.avg_fill_delay_ms)}ms` : '—', t: 'avg submit→fill time' },
+    { k: 'Fills measured', v: String(ex?.fills ?? 0) },
   ]
   return (
     <div style={{ display: 'grid', gap: 12, height: '100%', minHeight: 0, gridTemplateRows: 'auto 1fr' }}>
       <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
         {tiles.map((t) => (
-          <div key={t.k} className="card" style={{ padding: '12px 14px' }}>
+          <div key={t.k} className="card" style={{ padding: '12px 14px' }} title={t.t ?? t.k}>
             <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.k}</div>
             <div className={`mono ${t.c || ''}`} style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{t.v}</div>
           </div>

@@ -54,7 +54,7 @@ Intelligence→`agents`+`intelligence`, §2.5 Learning→`journal`+`training`,
 ## Test (offline, no broker)
 
 ```bash
-python -m pytest intraday/tests -q      # 79 pass: greeks/chain pipeline, paper flow,
+python -m pytest intraday/tests -q      # 84 pass: greeks/chain pipeline, paper flow,
                                         # all 25 agents, scanner, governor/rules/exits,
                                         # full session loop (entry→exit, square-off,
                                         # daily-loss halt), FUT-vs-OPT routing, live
@@ -113,6 +113,12 @@ journal (no real order placed). Config: `intraday/state/intraday_config.json`
 - **Honest numbers**: `roundtrip_cost_per_lot` (₹, default 0 — set ~40–60 for
   NSE options) books brokerage/STT into trade P&L so the kill switch and the
   reports see net; paper exits fill at bid/ask ± slippage like entries do.
+- **Paper bleeds like live**: paper fills re-price at the live touch at
+  execution time (buys pay the ask, sells take the bid — `paper_use_live_touch`,
+  config-file only), occur `paper_exec_delay_s` (default 1 s) after submit like
+  a real round trip, and every order journals decision vs fill. Reporting shows
+  realized slip in bps per side plus avg submit→fill delay; the Journal shows
+  Decide/Fill/Slip per order. Same accounting covers live fills automatically.
 - **API guard**: set `INTRADAY_API_TOKEN` on the VPS and all mutating endpoints
   (mode/kill/pause/config) require `Authorization: Bearer <token>`; the cockpit
   prompts once and remembers it. Unset locally = zero-setup open server.
