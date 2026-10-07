@@ -63,6 +63,7 @@ DEFAULTS: dict = {
     "trail_atr_mult": 2.5,                      # chandelier trail after +1R (ADX-gated wider)
     "stall_bars": 12,                           # I5: exit if age>=12 bars and R<+0.5
     "max_spread_pct": 8.0,                      # I2 liquidity guard on held leg
+    "min_hold_seconds": 90.0,                   # fresh fills defer I2/I5/I6 for this long (I0/I1/I3 stay instant)
 
     # ── decision thresholds ───────────────────────────────────────────────
     "score_threshold": 60.0,                    # min composite to fire

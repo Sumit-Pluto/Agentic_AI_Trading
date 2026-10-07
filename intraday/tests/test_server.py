@@ -44,6 +44,18 @@ def test_rest_and_ws_stream_live_state():
             assert "state" in b and "chains" in b and len(b["agent_rows"]) > 0
 
 
+def test_snapshot_carries_position_and_close_audit():
+    with _client() as c:
+        time.sleep(1.0)
+        with c.websocket_connect("/ws") as ws:
+            snap = ws.receive_json()
+            assert "closed_today" in snap and isinstance(snap["closed_today"], list)
+            for p in snap.get("positions", []):
+                for k in ("lot_size", "lots", "qty", "stop", "stop_prem",
+                          "risk_per_share", "r_mult", "entry_ts"):
+                    assert k in p, f"position missing {k}: {sorted(p)}"
+
+
 def test_pause_toggle_and_config_update():
     with _client() as c:
         assert c.post("/api/pause", json={"paused": True}).json()["paused"] is True

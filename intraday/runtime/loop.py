@@ -170,8 +170,12 @@ class SessionLoop:
             self.equity_curve = []
             self._log("session", f"new trading day {today.isoformat()} — halt cleared")
         if self._flatten_request:
-            self._flatten_all(now, self._flatten_reason or "flatten")
+            # cleared BEFORE the call so an incomplete flatten can re-arm
+            # itself for the next tick (otherwise the retry flag is wiped).
+            reason = self._flatten_reason or "flatten"
             self._flatten_request = False
+            self._flatten_reason = ""
+            self._flatten_all(now, reason)
 
         # 1. manage exits
         square_off = self.ctx.is_square_off(now)
@@ -303,23 +307,55 @@ class SessionLoop:
             lot = pos.lot_size or 1
             book_lots = int((pos.qty // lot) * decision.qty_frac)
             book_qty = book_lots * lot
-            if book_qty > 0:
-                res = self._exit_order(pos, book_qty, exit_px, now, decision.reason)
-                if res.status == "FILLED":
-                    self.store.book_partial(pos, res.fill_px or exit_px, book_qty,
-                                            decision.reason, now, self.brain.version,
-                                            cost_per_share=self._cost_per_share(pos))
-                else:
-                    # Not booked and not confirmed: re-offer the partial next
-                    # tick (the stop already sits at breakeven — the safe side).
-                    pos.partial_done = False
-                    pos.log.append(f"partial failed ({res.status}: {res.reason})")
-                    self._log("exits", f"{pos.symbol} partial failed ({res.status}) — retrying")
+            if book_qty <= 0:
+                # Single-lot position: nothing to split, but the machine has
+                # already moved the stop to breakeven — the safe side. Say so
+                # once (PARTIAL fires only once per position).
+                pos.log.append("partial skipped (single lot) — stop at breakeven")
+                self._log("exits", f"{pos.symbol} partial skipped (single lot) — "
+                                   "stop at breakeven")
+                self.store.update_position(pos)
+                return False
+            res = self._exit_order(pos, book_qty, exit_px, now, decision.reason)
+            actual = self._filled_shares(res, book_qty)
+            if res.status == "FILLED" and actual > 0:
+                fill = res.fill_px or exit_px
+                self.store.book_partial(pos, fill, actual,
+                                        decision.reason, now, self.brain.version,
+                                        cost_per_share=self._cost_per_share(pos))
+                sign = 1.0 if pos.is_long else -1.0
+                ppnl = sign * (fill - pos.entry_px) * actual
+                short = f", {book_qty - actual} unfilled" if actual < book_qty else ""
+                self._log("exits", f"{pos.symbol} partial {actual} @ {fill:.2f} "
+                                   f"({decision.reason}) pnl {ppnl:+.0f}{short}")
+                if actual < book_qty:
+                    pos.partial_done = False      # re-offer the rest next tick
+            else:
+                # Not booked and not confirmed: re-offer the partial next
+                # tick (the stop already sits at breakeven — the safe side).
+                pos.partial_done = False
+                pos.log.append(f"partial failed ({res.status}: {res.reason})")
+                self._log("exits", f"{pos.symbol} partial failed ({res.status}) — retrying")
             self.store.update_position(pos)
             return False
         # full EXIT — journal the close ONLY on a confirmed fill, at the real
         # fill price; otherwise the position stays managed and retries.
         res = self._exit_order(pos, pos.qty, exit_px, now, decision.reason)
+        filled = self._filled_shares(res, pos.qty)
+        if 0 < filled < pos.qty and res.status in ("FILLED", "WORKING"):
+            # Live partial fill: the filled shares really left — book them and
+            # keep managing the rest. Never journal shares still at the broker
+            # as closed (a retry would then double-sell them).
+            fill = res.fill_px or exit_px
+            total = pos.qty
+            self.store.book_partial(pos, fill, filled, decision.reason, now,
+                                    self.brain.version,
+                                    cost_per_share=self._cost_per_share(pos))
+            pos.log.append(f"partial fill {filled}/{total} ({res.status}) — holding rest")
+            self._log("exits", f"{pos.symbol} partial fill {filled}/{total} @ "
+                               f"{fill:.2f} ({decision.reason}) — holding rest")
+            self.store.update_position(pos)
+            return False
         if res.status != "FILLED":
             pos.log.append(f"exit failed ({res.status}: {res.reason}) — holding for retry")
             self._log("exits", f"{pos.symbol} exit failed ({res.status}) — retrying")
@@ -330,7 +366,36 @@ class SessionLoop:
         pos.exit_reason = decision.reason
         self.store.close_position(pos, self.brain.version,
                                   cost_per_share=self._cost_per_share(pos))
+        sign = 1.0 if pos.is_long else -1.0
+        cpnl = sign * ((pos.exit_px or 0.0) - pos.entry_px) * pos.qty
+        self._log("exits", f"{pos.symbol} closed @ {pos.exit_px:.2f} "
+                           f"({decision.reason}) hold {self._hold_str(pos, now)} "
+                           f"pnl {cpnl:+.0f}")
         return True
+
+    @staticmethod
+    def _filled_shares(res, ordered_qty: int) -> int:
+        """Shares the broker confirms filled for this order, clamped to what
+        was ordered. A silent broker (no filled_qty, e.g. paper legacy) is
+        read as a full fill — callers check this only on FILLED/WORKING."""
+        try:
+            if res.filled_qty is None:
+                return max(int(ordered_qty), 0)
+            return max(0, min(int(res.filled_qty), int(ordered_qty)))
+        except (TypeError, ValueError):
+            return max(int(ordered_qty or 0), 0)
+
+    @staticmethod
+    def _hold_str(pos: Position, now: dt.datetime) -> str:
+        try:
+            s = max(0, int((now - pos.entry_ts).total_seconds()))
+        except Exception:
+            return "?"
+        if s < 60:
+            return f"{s}s"
+        if s < 3600:
+            return f"{s // 60}m {s % 60:02d}s"
+        return f"{s // 3600}h {(s % 3600) // 60:02d}m"
 
     def _cost_per_share(self, pos: Position) -> float:
         """Configured round-trip costs (brokerage/STT/...) per share."""
@@ -363,6 +428,17 @@ class SessionLoop:
                 q, ch = self._leg_quote(pos.underlying, pos.strike, is_call)
                 px = (q.bid if q and pos.is_long else (q.ask if q else pos.entry_px)) or pos.entry_px
             res = self._exit_order(pos, pos.qty, px, now, reason)
+            filled = self._filled_shares(res, pos.qty)
+            if 0 < filled < pos.qty and res.status in ("FILLED", "WORKING"):
+                total = pos.qty
+                self.store.book_partial(pos, res.fill_px or px, filled, reason,
+                                        now, self.brain.version,
+                                        cost_per_share=self._cost_per_share(pos))
+                pos.log.append(f"flatten partial fill {filled}/{total} — keeping rest")
+                self._log("exits", f"{pos.symbol} flatten partial fill "
+                                   f"{filled}/{total} — keeping rest")
+                still.append(pos)
+                continue
             if res.status != "FILLED":
                 pos.log.append(f"flatten failed ({res.status}: {res.reason}) — keeping")
                 still.append(pos)
@@ -370,8 +446,17 @@ class SessionLoop:
             pos.exit_px, pos.exit_ts, pos.exit_reason = (res.fill_px or px), now, reason
             self.store.close_position(pos, self.brain.version,
                                       cost_per_share=self._cost_per_share(pos))
+            sign = 1.0 if pos.is_long else -1.0
+            cpnl = sign * ((pos.exit_px or 0.0) - pos.entry_px) * pos.qty
+            self._log("exits", f"{pos.symbol} flattened @ {pos.exit_px:.2f} "
+                               f"({reason}) pnl {cpnl:+.0f}")
         self.positions = still
         if still:
+            # Re-arm so the "retrying next tick" promise holds: without this a
+            # failed kill/square-off silently leaves positions open whenever no
+            # exit rule fires for them afterwards.
+            self._flatten_request = True
+            self._flatten_reason = reason
             self._log("exits", f"flatten incomplete: {len(still)} position(s) "
                                "failed to exit — retrying next tick")
 
@@ -748,6 +833,11 @@ class SessionLoop:
         res = self.orders.submit(intent, now, self.positions, is_exit=False,
                                  halted=self.halted, paused=self._paused())
         if res.status != "FILLED" or not res.fill_px:
+            # An attempted placement that failed is rare and important (unlike
+            # routine size/cap skips, which stay silent to avoid log floods).
+            self._log("entry", f"{sig.symbol} {sig.direction} {kind} "
+                               f"{inst.get('strike', '')} not placed "
+                               f"({res.status}: {res.reason})")
             return False
         # A live partial fill tracks only the filled shares (never ghost qty).
         fill_qty = int(res.filled_qty or 0)

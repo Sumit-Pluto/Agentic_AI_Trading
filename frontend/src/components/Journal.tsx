@@ -12,6 +12,13 @@ interface Order {
   limit_px: number | null; fill_px: number | null
 }
 
+function statusColor(s: string): string {
+  if (s === 'FILLED' || s === 'OK') return 'var(--green)'
+  if (s.startsWith('BLOCK')) return 'var(--amber)'
+  if (s.startsWith('TIMEOUT') || s.startsWith('WORKING') || s.startsWith('ERROR') || s.startsWith('REJECT')) return 'var(--red)'
+  return 'var(--dim)'
+}
+
 function slipBps(o: Order): string {
   if (o.limit_px == null || o.fill_px == null || o.limit_px <= 0) return '—'
   const dev = ((o.fill_px - o.limit_px) / o.limit_px) * 10000
@@ -49,7 +56,7 @@ export function Journal() {
                 <td className="mono">{num(t.exit_px)}</td>
                 <td className={`mono ${pnlClass(t.pnl)}`}>{signed(t.pnl)}</td>
                 <td className="mono dim">{num(t.r, 1)}</td>
-                <td className="dim">{t.exit_reason}</td>
+                <td className="dim wrap" style={{ textAlign: 'left' }}>{t.exit_reason}</td>
               </tr>
             ))}
             {trades.length === 0 && <tr><td colSpan={9} className="dim">no closed trades yet</td></tr>}
@@ -65,7 +72,7 @@ export function Journal() {
                 <td className="mono" style={{ textAlign: 'left' }}>{o.symbol}</td>
                 <td>{o.side}</td>
                 <td className="mono">{o.qty}</td>
-                <td><span className="pill" style={{ color: o.status === 'FILLED' ? 'var(--green)' : o.status.startsWith('BLOCK') ? 'var(--amber)' : 'var(--dim)' }}>{o.status}</span></td>
+                <td><span className="pill" style={{ color: statusColor(o.status) }}>{o.status}</span></td>
                 <td className="mono dim">{num(o.limit_px)}</td>
                 <td className="mono">{num(o.fill_px)}</td>
                 <td className="mono dim">{slipBps(o)}</td>

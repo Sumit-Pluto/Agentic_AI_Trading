@@ -347,3 +347,115 @@ def test_regime_off_still_fetches_stock_data(tmp_path, monkeypatch):
     ev = next(e for e in loop.activity if e["stage"] == "scan")
     assert "regime OFF" in ev["msg"] and "symbols" in ev["msg"]
     store.close()
+
+
+class _HalfFillBroker:
+    """Fills entries via paper; exits fill exactly half (live partial fill)."""
+
+    def __init__(self, exit_status="WORKING"):
+        from intraday.brokers import PaperBroker
+        self.name = "half-fill"
+        self._paper = PaperBroker(0.10)
+        self._exit_status = exit_status
+
+    def place(self, intent):
+        if str(intent.reason or "").startswith("exit:"):
+            half = max(0, int(intent.qty) // 2)
+            return {"broker_order_id": "LIVE-1", "status": self._exit_status,
+                    "fill_px": intent.limit_px or 100.0, "filled_qty": half}
+        return self._paper.place(intent)
+
+    def cancel(self, oid):
+        return False
+
+    def positions(self):
+        return []
+
+
+def _open_one(store, ctx, loop):
+    assert loop.step()["positions"] == 1
+    return loop.positions[0].qty
+
+
+def test_exit_working_partial_books_filled_and_holds_rest(tmp_path):
+    store = Store(tmp_path / "wp.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    full = _open_one(store, ctx, loop)
+    loop.set_broker(_HalfFillBroker("WORKING"))
+    ctx.set(now=_weekday(15, 16), square=True, trend="flat")
+    assert loop.step()["positions"] == 1          # NOT closed
+    assert loop.positions[0].qty == full - full // 2
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 1  # partial booked
+    assert any("partial fill" in e["msg"] for e in loop.activity)
+    store.close()
+
+
+def test_exit_filled_partial_qty_books_rest_not_full(tmp_path):
+    store = Store(tmp_path / "fp.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    full = _open_one(store, ctx, loop)
+    loop.set_broker(_HalfFillBroker("FILLED"))
+    ctx.set(now=_weekday(15, 16), square=True, trend="flat")
+    assert loop.step()["positions"] == 1
+    row = store.one("SELECT qty FROM trades")
+    assert row["qty"] == full // 2                # only filled shares booked
+    store.close()
+
+
+def test_failed_entry_placement_is_logged(tmp_path):
+    class _RejectBroker(_HalfFillBroker):
+        def place(self, intent):
+            return {"broker_order_id": "", "status": "REJECTED",
+                    "reason": "RMS: margin short"}
+
+    store = Store(tmp_path / "re.db")
+    loop = SessionLoop(ReplayContext(), store, CFG, brain=Brain.equal())
+    loop.set_broker(_RejectBroker())
+    assert loop.step()["positions"] == 0
+    assert any("not placed" in e["msg"] and "REJECTED" in e["msg"]
+               for e in loop.activity)
+    store.close()
+
+
+def test_flatten_retries_and_accounts_partials(tmp_path):
+    from intraday.brokers import PaperBroker
+
+    class _Flaky:
+        name = "flaky"
+
+        def __init__(self):
+            self._paper = PaperBroker(0.10)
+
+        def place(self, intent):
+            if str(intent.reason or "").startswith("entry:"):
+                return self._paper.place(intent)
+            half = max(0, int(intent.qty) // 2)
+            return {"broker_order_id": "LIVE-9", "status": "WORKING",
+                    "fill_px": intent.limit_px or 100.0, "filled_qty": half}
+
+        def cancel(self, oid):
+            return False
+
+        def positions(self):
+            return []
+
+    store = Store(tmp_path / "fl.db")
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, CFG, brain=Brain.equal())
+    full = _open_one(store, ctx, loop)
+    ctx.set(now=_weekday(15, 16), square=True, trend="flat")  # no new entries
+    loop.set_broker(_Flaky())
+    loop.request_flatten("test kill")
+    assert loop.step()["positions"] == 1
+    # one tick books TWO partials (flatten 100→50, then the I0 exit 50→25):
+    # every confirmed share is journalled, never the unfilled rest
+    assert loop.positions[0].qty == 25
+    assert loop._flatten_request is True                # re-armed for retry
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 2
+    loop.set_broker(PaperBroker(0.10))
+    assert loop.step()["positions"] == 0                # retry completed it
+    assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 3
+    assert loop._flatten_request is False
+    store.close()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { inr, num, pnlClass, signed, type Position, type Signal, type Snapshot } from '../lib/live'
+import { hhmm, inr, num, pnlClass, signed, type ClosedTrade, type Position, type Signal, type Snapshot } from '../lib/live'
 
 export function Cockpit({ snap, equity }: { snap: Snapshot | null; equity: { t: string; equity: number }[] }) {
   const st = snap?.state
@@ -26,19 +26,19 @@ export function Cockpit({ snap, equity }: { snap: Snapshot | null; equity: { t: 
   ]
   return (
     <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr', height: '100%' }}>
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+      <div className="tiles tiles-6">
         {tiles.map((t) => (
-          <div key={t.k} className="card" style={{ padding: '12px 14px' }}>
-            <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.k}</div>
-            <div className={`mono ${t.c}`} style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{t.v}</div>
+          <div key={t.k} className="card tile">
+            <div className="faint k">{t.k}</div>
+            <div className={`mono ${t.c} v`}>{t.v}</div>
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
+      <div className={`tiles ${budgetTiles.length > 4 ? 'tiles-6' : 'tiles-4'}`}>
         {budgetTiles.map((t) => (
-          <div key={t.k} className="card" style={{ padding: '10px 12px' }}>
-            <div className="faint" style={{ fontSize: 10, textTransform: 'uppercase' }}>{t.k}</div>
-            <div className={`mono ${t.c}`} style={{ fontSize: 16, fontWeight: 700, marginTop: 3 }}>{t.v}</div>
+          <div key={t.k} className="card tile">
+            <div className="faint k">{t.k}</div>
+            <div className={`mono ${t.c} v`}>{t.v}</div>
           </div>
         ))}
       </div>
@@ -60,12 +60,26 @@ export function Cockpit({ snap, equity }: { snap: Snapshot | null; equity: { t: 
         </div>
       </div>
 
-      <div className="card scroll" style={{ minHeight: 0, maxHeight: 240 }}>
+      <div className="card scroll" style={{ minHeight: 0, maxHeight: 260 }}>
         <table>
-          <thead><tr><th>Position</th><th>Side</th><th>Lots</th><th>Entry</th><th>Mark</th><th>P&L</th><th>Stop</th><th>Age</th><th>Strategy</th></tr></thead>
+          <thead><tr><th>Open Positions ({(snap?.positions ?? []).length})</th><th>Side</th>
+            <th title="lots × lot size">Lots</th><th>Qty</th><th>Entry</th><th>Mark</th><th>P&amp;L</th>
+            <th title="current R multiple">R</th><th title="premium stop (same units as entry)">SL prem</th>
+            <th title="underlying invalidation level">SL und</th><th>Entry</th><th>Age</th><th>Strategy</th></tr></thead>
           <tbody>
-            {(snap?.positions ?? []).map((p) => <PosRow key={p.symbol} p={p} />)}
-            {(snap?.positions?.length ?? 0) === 0 && <tr><td colSpan={9} className="dim">no open positions</td></tr>}
+            {(snap?.positions ?? []).map((p) => <PosRow key={`${p.symbol}-${p.side}-${p.entry_ts}`} p={p} />)}
+            {(snap?.positions?.length ?? 0) === 0 && <tr><td colSpan={13} className="dim">no open positions</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card scroll" style={{ minHeight: 0, maxHeight: 220 }}>
+        <table>
+          <thead><tr><th>Closed Today ({(snap?.closed_today ?? []).length})</th><th>Side</th>
+            <th>Qty</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>R</th><th>Hold</th><th>Exit</th><th>Reason</th></tr></thead>
+          <tbody>
+            {(snap?.closed_today ?? []).map((t, i) => <ClosedRow key={`${t.symbol}-${i}`} t={t} />)}
+            {(snap?.closed_today?.length ?? 0) === 0 && <tr><td colSpan={10} className="dim">nothing closed yet today</td></tr>}
           </tbody>
         </table>
       </div>
@@ -113,11 +127,11 @@ function SignalRow({ s }: { s: Signal }) {
         <b>{s.symbol}</b>
         <span className="mono dim">{inst?.tsym ?? `${inst?.strike ?? ''}${inst?.right ?? ''}`}</span>
         <div style={{ flex: 1 }} />
-        <span className="mono dim" title={`fired at ${s.ts} IST`}>{hhmmss(s.ts)} · {ageStr(s.ts, now)}</span>
-        {s.scan_ms != null && <span className="mono dim" title="agent-scan compute time">scan {num(s.scan_ms, 0)}ms</span>}
+        <span className="mono dim" style={{ minWidth: 148, textAlign: 'right' }} title={`fired at ${s.ts} IST`}>{hhmmss(s.ts)} · {ageStr(s.ts, now)}</span>
+        {s.scan_ms != null && <span className="mono dim" style={{ minWidth: 78, textAlign: 'right' }} title="agent-scan compute time">scan {num(s.scan_ms, 0)}ms</span>}
         {wp != null && <span className="pill mono" title="trained-model win probability"
-          style={{ color: wp >= 0.5 ? 'var(--green)' : 'var(--amber)' }}>P {Math.round(wp * 100)}%</span>}
-        <span className="mono">B {num(s.score_buy, 0)} / S {num(s.score_sell, 0)}</span>
+          style={{ color: wp >= 0.5 ? 'var(--green)' : 'var(--amber)', minWidth: 52, justifyContent: 'center' }}>P {Math.round(wp * 100)}%</span>}
+        <span className="mono" style={{ minWidth: 96, textAlign: 'right' }}>B {num(s.score_buy, 0)} / S {num(s.score_sell, 0)}</span>
       </div>
       {open && (
         <div style={{ marginTop: 8, display: 'grid', gap: 10, paddingLeft: 22 }}>
@@ -203,17 +217,39 @@ function SignalRow({ s }: { s: Signal }) {
 }
 
 function PosRow({ p }: { p: Position }) {
+  const r = p.r_mult
   return (
     <tr>
       <td className="mono">{p.symbol}</td>
       <td><span className="pill" style={{ color: p.right === 'CE' ? 'var(--green)' : 'var(--red)' }}>{p.side} {p.right}</span></td>
-      <td className="mono">{p.lots}</td>
+      <td className="mono" title={`lot size ${p.lot_size || '—'}`}>{p.lots} × {p.lot_size || '—'}</td>
+      <td className="mono">{p.qty}</td>
       <td className="mono">{num(p.entry_px)}</td>
       <td className="mono">{num(p.mark)}</td>
       <td className={`mono ${pnlClass(p.pnl)}`}>{signed(p.pnl)}</td>
-      <td className="mono dim">{num(p.stop, 0)}</td>
-      <td className="mono dim">{p.age_bars}</td>
+      <td className={`mono ${pnlClass(r)}`}>{r == null ? '—' : `${r >= 0 ? '+' : ''}${num(r, 2)}R`}</td>
+      <td className="mono" title="engine premium stop — exits at/below this premium">{num(p.stop_prem)}</td>
+      <td className="mono dim" title="underlying invalidation level">{num(p.stop, 0)}</td>
+      <td className="mono dim">{hhmm(p.entry_ts)}</td>
+      <td className="mono dim">{num(p.age_bars, 1)} bars</td>
       <td className="dim">{p.strategy}</td>
+    </tr>
+  )
+}
+
+function ClosedRow({ t }: { t: ClosedTrade }) {
+  return (
+    <tr>
+      <td className="mono">{t.symbol}</td>
+      <td className="dim">{t.side}</td>
+      <td className="mono">{t.qty}</td>
+      <td className="mono">{num(t.entry_px)}</td>
+      <td className="mono">{num(t.exit_px)}</td>
+      <td className={`mono ${pnlClass(t.pnl)}`}>{signed(t.pnl)}</td>
+      <td className={`mono ${pnlClass(t.r)}`}>{t.r == null ? '—' : `${t.r >= 0 ? '+' : ''}${num(t.r, 2)}R`}</td>
+      <td className="mono dim">{t.hold_bars == null ? '—' : `${num(t.hold_bars, 1)} bars`}</td>
+      <td className="mono dim">{t.exit_ts ? hhmm(t.exit_ts) : '—'}</td>
+      <td className="dim wrap">{t.exit_reason ?? '—'}</td>
     </tr>
   )
 }

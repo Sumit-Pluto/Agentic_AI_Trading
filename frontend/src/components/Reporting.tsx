@@ -37,11 +37,11 @@ export function Reporting() {
   ]
   return (
     <div style={{ display: 'grid', gap: 12, height: '100%', minHeight: 0, gridTemplateRows: 'auto 1fr' }}>
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
+      <div className="tiles tiles-6">
         {tiles.map((t) => (
-          <div key={t.k} className="card" style={{ padding: '12px 14px' }} title={t.t ?? t.k}>
-            <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.k}</div>
-            <div className={`mono ${t.c || ''}`} style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{t.v}</div>
+          <div key={t.k} className="card tile" title={t.t ?? t.k}>
+            <div className="faint k">{t.k}</div>
+            <div className={`mono ${t.c || ''} v`}>{t.v}</div>
           </div>
         ))}
       </div>

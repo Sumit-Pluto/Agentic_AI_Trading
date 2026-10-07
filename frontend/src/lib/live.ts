@@ -14,8 +14,15 @@ export interface Budget {
 }
 export interface Position {
   symbol: string; underlying: string; side: string; right: string; strike: number
-  qty: number; lots: number; entry_px: number | null; mark: number | null; pnl: number | null
-  stop: number | null; age_bars: number; strategy: string; entry_ts: string
+  qty: number; lots: number; lot_size: number
+  entry_px: number | null; mark: number | null; pnl: number | null; r_mult: number | null
+  stop: number | null; stop_prem: number | null; risk_per_share: number | null
+  age_bars: number; strategy: string; entry_ts: string
+}
+export interface ClosedTrade {
+  symbol: string; underlying: string; side: string; qty: number
+  entry_px: number | null; exit_px: number | null; pnl: number | null; r: number | null
+  hold_bars: number | null; exit_reason: string | null; exit_ts: string | null
 }
 export interface SignalInstrument {
   kind?: string; tsym?: string; token?: string; exch?: string
@@ -56,7 +63,7 @@ export interface Chain {
 export interface ActivityEvent { ts: string; stage: string; msg: string }
 export interface ScanProg { symbol: string; role: string; bars: number; chain: boolean }
 export interface Snapshot {
-  type?: string; seq: number; state: EngineState; positions: Position[]; signals: Signal[]
+  type?: string; seq: number; state: EngineState; positions: Position[]; closed_today?: ClosedTrade[]; signals: Signal[]
   agent_rows: AgentRow[]; chains: Record<string, Chain>; equity_point?: { t: string; equity: number | null }
   budget?: Budget; funds?: Record<string, unknown> | null
   activity?: ActivityEvent[]; scan?: ScanProg[]

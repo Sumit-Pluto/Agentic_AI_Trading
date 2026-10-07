@@ -223,6 +223,7 @@ class EngineRunner:
             "budget": budget,
             "funds": funds,
             "positions": [self._pos_view(p) for p in pos],
+            "closed_today": self._closed_today(now),
             "signals": (self.loop.last_scan or {}).get("signals", []),
             "agent_rows": (self.loop.last_scan or {}).get("rows", []),
             "activity": list(self.loop.activity),
@@ -242,12 +243,56 @@ class EngineRunner:
                 q = ch.get(p.strike, is_call)
             mark = (q.bid if p.is_long else q.ask) if q else p.entry_px
         pnl = (1 if p.is_long else -1) * ((mark or p.entry_px) - p.entry_px) * p.qty
+        # Premium stop (I1b floor, same units as entry/mark) alongside the
+        # underlying stop level — the cockpit shows both so the SL is readable.
+        try:
+            loss_pct = float(self.cfg.get("max_prem_loss_pct", 40.0)) / 100.0
+        except (TypeError, ValueError):
+            loss_pct = 0.40
+        if str(p.right).upper() == "FUT":
+            stop_prem = None                       # futures: underlying stop only
+        elif p.is_long:
+            stop_prem = p.entry_px * (1.0 - loss_pct)
+        else:
+            stop_prem = p.entry_px * (1.0 + loss_pct)   # short premium mirror
+        rps = p.risk_per_share or 0.0
+        r_mult = ((1 if p.is_long else -1) * ((mark or p.entry_px) - p.entry_px)
+                  / rps) if rps else None
         return {"symbol": p.symbol, "underlying": p.underlying, "side": p.side,
                 "right": p.right, "strike": p.strike, "qty": p.qty,
+                "lot_size": p.lot_size or 0,
                 "lots": p.qty // (p.lot_size or 1), "entry_px": _num(p.entry_px),
-                "mark": _num(mark), "pnl": _num(pnl), "stop": _num(p.stop),
-                "age_bars": p.age_bars, "strategy": p.strategy,
+                "mark": _num(mark), "pnl": _num(pnl), "r_mult": _num(r_mult),
+                "stop": _num(p.stop), "stop_prem": _num(stop_prem),
+                "risk_per_share": _num(rps),
+                "age_bars": round(p.age_bars or 0.0, 1), "strategy": p.strategy,
                 "entry_ts": p.entry_ts.isoformat()}
+
+    def _closed_today(self, now) -> list:
+        """Today's closed trades (latest first) so the cockpit reconciles every
+        fill — entries that exit fast are visible here, not just in the log."""
+        try:
+            rows = self.store.q(
+                "SELECT symbol,underlying,side,qty,entry_px,exit_px,pnl,r,"
+                "hold_bars,exit_reason,exit_ts FROM trades WHERE date=? "
+                "ORDER BY exit_ts DESC LIMIT 50", (str(now.date()),))
+        except Exception:
+            return []
+        out = []
+        for r in rows or []:
+            try:
+                out.append({"symbol": r["symbol"], "underlying": r["underlying"],
+                            "side": r["side"], "qty": r["qty"],
+                            "entry_px": _num(r["entry_px"]),
+                            "exit_px": _num(r["exit_px"]), "pnl": _num(r["pnl"]),
+                            "r": _num(r["r"]),
+                            "hold_bars": (round(float(r["hold_bars"] or 0), 1)
+                                          if r["hold_bars"] is not None else None),
+                            "exit_reason": r["exit_reason"],
+                            "exit_ts": r["exit_ts"]})
+            except Exception:
+                continue
+        return out
 
     def _chain_view(self, ch) -> dict | None:
         if ch is None:

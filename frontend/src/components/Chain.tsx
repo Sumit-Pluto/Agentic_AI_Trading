@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { num, type Chain, type Leg, type Snapshot } from '../lib/live'
 
+// Server sends leg IV pre-multiplied to percent (14.0 = 14%).
+function pct(iv: number | null | undefined): string {
+  return iv == null || !isFinite(iv) ? '—' : `${num(iv, 1)}%`
+}
+
 export function ChainView({ snap }: { snap: Snapshot | null }) {
   const chains = snap?.chains ?? {}
   const syms = Object.keys(chains)
@@ -41,13 +46,13 @@ export function ChainView({ snap }: { snap: Snapshot | null }) {
                 <tr key={r.strike} style={atm ? { background: 'var(--accent-bg)' } : undefined}>
                   <OI leg={r.ce} maxOI={maxOI} side="call" />
                   <td className="mono dim">{num(r.ce?.delta, 2)}</td>
-                  <td className="mono">{num(r.ce?.iv, 1)}</td>
+                  <td className="mono">{pct(r.ce?.iv)}</td>
                   <td className="mono">{num(r.ce?.bid, 1)}</td>
                   <td className="mono">{num(r.ce?.ask, 1)}</td>
                   <td className="mono" style={{ textAlign: 'center', fontWeight: 700 }}>{num(r.strike, 0)}</td>
                   <td className="mono">{num(r.pe?.bid, 1)}</td>
                   <td className="mono">{num(r.pe?.ask, 1)}</td>
-                  <td className="mono">{num(r.pe?.iv, 1)}</td>
+                  <td className="mono">{pct(r.pe?.iv)}</td>
                   <td className="mono dim">{num(r.pe?.delta, 2)}</td>
                   <OI leg={r.pe} maxOI={maxOI} side="put" />
                 </tr>

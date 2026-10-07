@@ -135,6 +135,66 @@ def test_exit_hold_updates_max_prem():
     assert d.action == "HOLD" and p.max_prem >= 105 and p.age_bars == 1
 
 
+# ── Min-hold guard: noise exits wait, hard stops stay instant ─────────────────
+def _fresh_pos(**kw):
+    kw.setdefault("entry_ts", ist_now())
+    p = _pos()
+    for k, v in kw.items():
+        setattr(p, k, v)
+    return p
+
+
+def _aged_pos(age_s=600, **kw):
+    return _fresh_pos(entry_ts=ist_now() - dt.timedelta(seconds=age_s), **kw)
+
+
+def _onesided_mkt(spot=24810.0, mid=105.0):
+    return ExitMarket(now=ist_now(), spot=spot, leg_bid=0.0, leg_ask=mid * 1.01,
+                      leg_mid=mid, bars=None, vwap=None, is_square_off=False)
+
+
+def test_exit_minhold_defers_liquidity_exit():
+    cfg = {"min_hold_seconds": 90}
+    d = manage(_fresh_pos(), _onesided_mkt(), cfg)
+    assert d.action == "HOLD", d.reason          # fresh trade breathes…
+    d = manage(_aged_pos(), _onesided_mkt(), cfg)
+    assert d.action == "EXIT" and "I2" in d.reason  # …aged one exits
+
+
+def test_exit_minhold_defers_vwap_flip():
+    cfg = {"min_hold_seconds": 90, "target_r_1": 5, "target_r_2": 9}
+    mkt = ExitMarket(now=ist_now(), spot=24790.0, leg_bid=104.0, leg_ask=106.0,
+                     leg_mid=105.0, bars=None, vwap=24800.0, is_square_off=False)
+    d = manage(_fresh_pos(), mkt, cfg)
+    assert d.action == "HOLD", d.reason
+    d = manage(_aged_pos(), mkt, cfg)
+    assert d.action == "EXIT" and "I6" in d.reason
+
+
+def test_exit_minhold_keeps_hard_stop_and_squareoff_instant():
+    cfg = {"min_hold_seconds": 3600}
+    d = manage(_fresh_pos(stop=24770), _mkt(24760, 90), cfg)
+    assert d.action == "EXIT" and "I1" in d.reason
+    d = manage(_fresh_pos(), _mkt(24900, 130, square=True), cfg)
+    assert d.action == "EXIT" and "I0" in d.reason
+
+
+# ── Short premium (adopted/manual): the premium stop mirrors ─────────────────
+def _short_pos(entry=100.0):
+    return Position(symbol="NIFTY24800CE", qty=50, side="SELL", entry_px=entry,
+                    entry_ts=ist_now(), stop=0, risk_per_share=40.0, right="CE",
+                    strike=24800, lot_size=50, underlying="NIFTY",
+                    entry_spot=24800.0, max_prem=entry, max_fav_spot=24800.0)
+
+
+def test_exit_short_premium_stop():
+    cfg = {"max_prem_loss_pct": 40, "target_r_1": 5, "target_r_2": 9}
+    d = manage(_short_pos(), _mkt(24810, 145), cfg)   # prem rallied past +40%
+    assert d.action == "EXIT" and "I1" in d.reason and "short" in d.reason
+    d = manage(_short_pos(), _mkt(24810, 105), cfg)
+    assert d.action == "HOLD", d.reason
+
+
 # ── FUT legs: direction-aware exits, budget, dedup ────────────────────────────
 def _fut_pos(side="BUY", entry=24800.0, stop=24760.0, rps=40.0):
     return Position(symbol="NIFTY-FUT", qty=50, side=side, entry_px=entry,
