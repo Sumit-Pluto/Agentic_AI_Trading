@@ -50,6 +50,7 @@ class EngineRunner:
         self._snap: dict = {}
         self._seq = 0
         self._funds_at, self._funds_val = 0.0, None
+        self._broker_cache: dict = {}
 
     @property
     def mode(self) -> str:                    # data-source label (for the snapshot)
@@ -107,6 +108,30 @@ class EngineRunner:
             self._funds_val = None
         self._funds_at = time.time()
         return self._funds_val
+
+    def _broker_cached(self, key: str, ttl_s: float, fn):
+        """Gateway read with a short TTL; serves stale data on a transient
+        failure rather than blanking the UI. Returns None with no client."""
+        if self.client is None:
+            return None
+        now = time.time()
+        hit = self._broker_cache.get(key)
+        if hit is not None and now - hit[0] < ttl_s:
+            return hit[1]
+        try:
+            val = fn()
+        except Exception:
+            return hit[1] if hit is not None else None
+        self._broker_cache[key] = (now, val)
+        return val
+
+    def order_book(self):
+        """Live broker order book (None when no Gateway client)."""
+        return self._broker_cached("orderbook", 3.0, lambda: self.client.order_book())
+
+    def broker_positions(self):
+        """Live broker net positions, flat rows (None when no client)."""
+        return self._broker_cached("bpos", 3.0, lambda: self.client.positions())
 
     def set_mode(self, mode: str, confirm: str = "") -> dict:
         """Toggle PAPER<->LIVE. LIVE requires typed confirm + a Gateway client

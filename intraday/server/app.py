@@ -240,6 +240,75 @@ def budget():
     return {"budget": s.get("budget", {}), "funds": s.get("funds")}
 
 
+def _num_or_none(x):
+    try:
+        f = float(x)
+        return f if f == f else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_zero(x) -> int:
+    try:
+        return int(float(x or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _norm_broker_order(o: dict) -> dict:
+    side = "BUY" if str(o.get("trantype", "")).upper().startswith("B") else "SELL"
+    return {"id": str(o.get("norenordno") or o.get("orderid") or ""),
+            "tsym": str(o.get("tsym") or ""), "exch": str(o.get("exch") or ""),
+            "prd": str(o.get("prd") or ""), "side": side,
+            "qty": _int_or_zero(o.get("qty")),
+            "filled": _int_or_zero(o.get("fillshares")),
+            "status": str(o.get("status") or "").upper(),
+            "price": _num_or_none(o.get("prc") or o.get("price")),
+            "avg": _num_or_none(o.get("avgprc")),
+            "time": str(o.get("pytime") or o.get("exch_tm") or ""),
+            "rejreason": str(o.get("rejreason") or ""),
+            "remarks": str(o.get("remarks") or "")}
+
+
+def _norm_broker_position(p: dict) -> dict:
+    net = _int_or_zero(p.get("netqty"))
+    side = "BUY" if net >= 0 else "SELL"
+    avg = p.get("buyavgprc") if side == "BUY" else p.get("sellavgprc")
+    return {"tsym": str(p.get("tsym") or ""), "exch": str(p.get("exch") or ""),
+            "prd": str(p.get("prd") or p.get("s_prdt_ali") or ""),
+            "side": side, "qty": abs(net),
+            "avg": _num_or_none(avg), "ltp": _num_or_none(p.get("lp")),
+            "pnl": _num_or_none(p.get("total_pnl")),
+            "mtm": _num_or_none(p.get("urmtom")),
+            "realized": _num_or_none(p.get("rpnl")),
+            "lot_size": _int_or_zero(p.get("lotsize")) or 0}
+
+
+@app.get("/api/orderbook")
+def orderbook():
+    """Live broker order book (Shoonya truth, latest first). connected=False
+    when this server has no Gateway client (sim/offline)."""
+    raw = runner.order_book()
+    if raw is None:
+        return {"connected": False, "orders": []}
+    rows = raw if isinstance(raw, list) else []
+    orders = [_norm_broker_order(o) for o in rows if isinstance(o, dict)]
+    orders.reverse()
+    return {"connected": True, "orders": orders}
+
+
+@app.get("/api/broker-positions")
+def broker_positions():
+    """Live broker net positions (all products/strategies on the account).
+    connected=False when this server has no Gateway client."""
+    raw = runner.broker_positions()
+    if raw is None:
+        return {"connected": False, "positions": []}
+    rows = raw if isinstance(raw, list) else []
+    out = [_norm_broker_position(p) for p in rows if isinstance(p, dict)]
+    return {"connected": True, "positions": [p for p in out if p["qty"] != 0]}
+
+
 @app.get("/api/funds")
 def funds():
     return {"funds": runner._funds()}

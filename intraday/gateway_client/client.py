@@ -32,6 +32,30 @@ class BrokerOffline(GatewayError):
     """The Gateway is up but has no live broker session — a human must connect."""
 
 
+def flatten_positions(payload: Any) -> list[dict]:
+    """Broker positions as a flat list of raw rows, whatever envelope the
+    Gateway wraps them in ({positions:[..]} or {symbol_groups:[{positions:[..]}]}).
+    Never raises; unknown shapes yield []."""
+    try:
+        if isinstance(payload, list):
+            return [p for p in payload if isinstance(p, dict)]
+        if isinstance(payload, dict):
+            direct = payload.get("positions")
+            if isinstance(direct, list):
+                return [p for p in direct if isinstance(p, dict)]
+            groups = payload.get("symbol_groups")
+            if isinstance(groups, list):
+                out: list[dict] = []
+                for g in groups:
+                    if isinstance(g, dict):
+                        out.extend(p for p in (g.get("positions") or [])
+                                   if isinstance(p, dict))
+                return out
+    except Exception:
+        pass
+    return []
+
+
 def option_tradingsymbol(symbol: str, expiry, is_call: bool, strike: float) -> str:
     """The broker's own name for one option contract, e.g. NIFTY29SEP26C24800.
 
@@ -190,8 +214,7 @@ class GatewayClient:
         return self._request("GET", "/api/funds")
 
     def positions(self) -> list[dict]:
-        r = self._request("GET", "/api/positions")
-        return r.get("positions", r) if isinstance(r, dict) else r
+        return flatten_positions(self._request("GET", "/api/positions"))
 
     def order_margin(self, exchange: str, tradingsymbol: str, quantity: int,
                      buy_or_sell: str = "B", product_type: str = "M") -> dict:

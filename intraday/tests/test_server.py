@@ -56,6 +56,62 @@ def test_snapshot_carries_position_and_close_audit():
                     assert k in p, f"position missing {k}: {sorted(p)}"
 
 
+def test_orderbook_and_positions_offline_without_gateway():
+    with _client() as c:
+        ob = c.get("/api/orderbook").json()
+        assert ob == {"connected": False, "orders": []}
+        bp = c.get("/api/broker-positions").json()
+        assert bp == {"connected": False, "positions": []}
+
+
+def test_orderbook_and_positions_with_fake_gateway():
+    import intraday.server.app as appmod
+
+    class _FakeGW:
+        def order_book(self):
+            return [
+                {"norenordno": "111", "tsym": "NIFTY29SEP26C24800", "exch": "NFO",
+                 "prd": "I", "trantype": "B", "qty": "50", "fillshares": "50",
+                 "status": "COMPLETE", "prc": "100.5", "avgprc": "100.4",
+                 "pytime": "10:01:11", "remarks": "entry:test"},
+                {"norenordno": "112", "tsym": "NIFTY29SEP26C24800", "exch": "NFO",
+                 "prd": "I", "trantype": "S", "qty": "50", "fillshares": "0",
+                 "status": "OPEN", "prc": "150.0", "avgprc": "0",
+                 "pytime": "10:05:00", "remarks": "exit:test"},
+            ]
+
+        def positions(self):
+            return [
+                {"tsym": "NIFTY29SEP26C24800", "exch": "NFO", "prd": "I",
+                 "netqty": "50", "buyavgprc": "100.4", "sellavgprc": "0",
+                 "lp": "120.0", "urmtom": "980.0", "rpnl": "0",
+                 "total_pnl": "980.0", "lotsize": "50"},
+                {"tsym": "FLATLEG", "exch": "NFO", "prd": "I", "netqty": "0",
+                 "buyavgprc": "0", "sellavgprc": "0", "lp": "0", "lotsize": "1"},
+            ]
+
+        def funds(self):
+            return {"cash": 95000.0, "margin_used": 12000.0,
+                    "payin": 100000.0, "collateral": 0.0}
+
+    with _client() as c:
+        appmod.runner.client = _FakeGW()
+        ob = c.get("/api/orderbook").json()
+        assert ob["connected"] is True and len(ob["orders"]) == 2
+        first, second = ob["orders"]          # latest first
+        assert (first["id"], first["side"], first["status"]) == ("112", "SELL", "OPEN")
+        assert (second["id"], second["filled"], second["avg"]) == ("111", 50, 100.4)
+        bp = c.get("/api/broker-positions").json()
+        assert bp["connected"] is True and len(bp["positions"]) == 1  # flat row dropped
+        p = bp["positions"][0]
+        assert (p["tsym"], p["side"], p["qty"], p["avg"]) == \
+            ("NIFTY29SEP26C24800", "BUY", 50, 100.4)
+        assert p["mtm"] == 980.0 and p["lot_size"] == 50
+        f = c.get("/api/funds").json()
+        assert f["funds"]["cash"] == 95000.0
+        appmod.runner.client = None
+
+
 def test_pause_toggle_and_config_update():
     with _client() as c:
         assert c.post("/api/pause", json={"paused": True}).json()["paused"] is True

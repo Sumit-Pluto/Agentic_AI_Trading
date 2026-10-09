@@ -60,6 +60,20 @@ export interface Chain {
   symbol: string; spot: number | null; atm: number | null; expiry: string; lot_size: number
   features: Record<string, number | null>; rows: ChainRow[]
 }
+export interface BrokerOrder {
+  id: string; tsym: string; exch: string; prd: string; side: string
+  qty: number; filled: number; status: string
+  price: number | null; avg: number | null; time: string
+  rejreason: string; remarks: string
+}
+export interface BrokerPosition {
+  tsym: string; exch: string; prd: string; side: string; qty: number
+  avg: number | null; ltp: number | null; pnl: number | null; mtm: number | null
+  realized: number | null; lot_size: number
+}
+export interface FundsInfo {
+  cash: number; margin_used: number; payin: number; collateral: number
+}
 export interface ActivityEvent { ts: string; stage: string; msg: string }
 export interface ScanProg { symbol: string; role: string; bars: number; chain: boolean }
 export interface Snapshot {
