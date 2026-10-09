@@ -11,10 +11,11 @@ Last updated: 2026-10-07. Read this first when resuming work.
   - `intraday/tests/test_server.py`
   - New: `frontend/src/components/Funds.tsx`, `frontend/src/components/Orders.tsx`,
     `intraday/tests/test_gateway_client.py`
-- VPS (`root@192.168.133.205`, code at `/opt/ai_trading`, service `ai-intraday`
-  on :8040) is **not yet updated** — unreachable from this Mac until the local
-  WireGuard peer is brought up. Deploy = `git pull` there, `npm run build` in
-  `frontend/`, `systemctl restart ai-intraday`.
+- VPS (`root@192.168.133.205`, code at `/opt/ai_intraday` — note: NOT
+  `/opt/ai_trading`, service `ai-intraday` on :8040) is updated to `c501e59`
+  (2026-10-09). Deploy = `git pull` there, `npm run build` in `frontend/`,
+  `systemctl restart ai-intraday`. SSH needs `require_escalated` + local
+  WireGuard up; VPS `main` now tracks `origin/main`.
 
 ## What was built (in order)
 

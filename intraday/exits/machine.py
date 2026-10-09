@@ -66,6 +66,13 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
         step_age = 1.0
     pos.age_bars += step_age
 
+    # Remember the last two-sided quote while we have one — the I2
+    # one-sided exit falls back to it (side-aware) instead of 0.05.
+    if mkt.leg_bid > 0:
+        pos.last_good_bid = mkt.leg_bid
+    if mkt.leg_ask > 0:
+        pos.last_good_ask = mkt.leg_ask
+
     # premium-based R multiple
     rps = pos.risk_per_share or 1.0
     r_mult = ((prem - pos.entry_px) if long else (pos.entry_px - prem)) / rps
@@ -117,7 +124,18 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
         if guarded:
             deferred.append("I2 one-sided book")
         else:
-            return ExitDecision("EXIT", "I2 one-sided book", exit_px=max(mkt.leg_bid, 0.05))
+            # Exit at the last REAL price for the side (paper fills at this
+            # px; live routes a marketable limit near the market, not off the
+            # bands). Entry price, then the 0.05 floor, are last resorts —
+            # a 5-paise fantasy fill must never masquerade as a -18R trade.
+            last_px = pos.last_good_bid if long else pos.last_good_ask
+            if last_px > 0:
+                px = last_px
+            elif pos.entry_px > 0:
+                px = pos.entry_px
+            else:
+                px = 0.05
+            return ExitDecision("EXIT", "I2 one-sided book", exit_px=px)
     spread_pct = (mkt.leg_ask - mkt.leg_bid) / mkt.leg_mid * 100.0 if mkt.leg_mid > 0 else 999
     if spread_pct > float(cfg.get("max_spread_pct", 8.0)):
         if guarded:
@@ -159,7 +177,7 @@ def manage(pos, mkt: ExitMarket, cfg: dict) -> ExitDecision:
             deferred.append("I5 stall")
         else:
             pos.stall_checked = True
-            return ExitDecision("EXIT", f"I5 stall {pos.age_bars} bars <0.5R", exit_px=exit_px)
+            return ExitDecision("EXIT", f"I5 stall {pos.age_bars:.1f} bars <0.5R", exit_px=exit_px)
 
     # ── I6 STRUCTURE FLIP (5m close back through VWAP against the position) ──
     vwap = mkt.vwap

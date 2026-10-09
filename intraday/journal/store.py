@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS brains(
 CREATE TABLE IF NOT EXISTS jobs(
   id INTEGER PRIMARY KEY, name TEXT, started TEXT, finished TEXT,
   status TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS flags(   -- small durable key/values (halts, markers)
+  key TEXT PRIMARY KEY, value TEXT, updated TEXT);
 """
 
 
@@ -106,6 +108,20 @@ class Store:
             cur = self.cx.execute(sql, args)
             self.cx.commit()
             return cur.lastrowid
+
+    # ---------------- flags (small durable key/values: halts, markers)
+    def get_flag(self, key: str):
+        r = self.one("SELECT value FROM flags WHERE key=?", (key,))
+        return r["value"] if r else None
+
+    def set_flag(self, key: str, value: str):
+        self.x("INSERT INTO flags(key,value,updated) VALUES(?,?,?) "
+               "ON CONFLICT(key) DO UPDATE SET value=excluded.value, "
+               "updated=excluded.updated",
+               (key, value, dt.datetime.now(dt.timezone.utc).isoformat()))
+
+    def del_flag(self, key: str):
+        self.x("DELETE FROM flags WHERE key=?", (key,))
 
     # ---------------- signals
     def save_signal(self, s) -> int:

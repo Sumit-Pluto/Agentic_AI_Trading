@@ -9,6 +9,7 @@ everything except a duplicate-exit guard. Entry checks:
   • market-hours / weekday                       → block outside the session
   • max open positions
   • already-held / duplicate: one position per (underlying, direction)
+  • re-entry cooldown: no re-entry on (underlying, right) right after an exit
   • per-underlying lot cap (exposure)
 
 Enforcing §2.3 examples: duplicate orders, multiple strategies opening identical
@@ -30,13 +31,20 @@ def _hhmm(s: str, default: dt.time) -> dt.time:
         return default
 
 
+def cooldown_key(underlying: str, right: str) -> str:
+    """Journal key for the re-entry cooldown — the same (underlying, right)
+    identity the duplicate gate compares (raw underlying, upper right)."""
+    return f"{underlying or ''}|{str(right or '').upper()}"
+
+
 class RuleEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg or {}
 
     def check(self, intent, now: dt.datetime, open_positions: list, *,
               is_exit: bool = False, halted: bool = False,
-              paused: bool = False, holidays=None) -> tuple[bool, str]:
+              paused: bool = False, holidays=None,
+              last_exits: dict | None = None) -> tuple[bool, str]:
         cfg = self.cfg
         right = str(getattr(intent, "right", "")).upper()
         underlying = getattr(intent, "underlying", "") or ""
@@ -78,6 +86,25 @@ class RuleEngine:
                     and (right != "FUT"
                          or str(getattr(p, "side", "")).upper() == side)):
                 return False, f"already holding {underlying} {right} — duplicate"
+
+        # re-entry cooldown: a fresh exit buys quiet before the same bet.
+        # Without this an I6 VWAP wobble re-enters every scan and churns
+        # spread+slip dozens of times a session at the same prices.
+        try:
+            cool = float(cfg.get("reentry_cooldown_seconds", 300.0) or 0.0)
+        except (TypeError, ValueError):
+            cool = 0.0
+        if cool > 0 and last_exits:
+            prev = last_exits.get(cooldown_key(underlying, right))
+            if prev is not None:
+                try:
+                    age = (now - prev).total_seconds()
+                except Exception:
+                    age = None            # unusable clock: historical behaviour
+                if age is not None and age < cool:
+                    left = max(0.0, cool - age)
+                    return False, (f"re-entry cooldown {underlying} {right} — "
+                                   f"{left:.0f}s left")
 
         # per-underlying lot cap (exposure across any legs on this underlying)
         lot = int(getattr(intent, "lot_size", 0) or 0)

@@ -23,6 +23,12 @@ export function Header({ snap, connected }: { snap: Snapshot | null; connected: 
     if (!window.confirm('KILL SWITCH — halt trading and flatten ALL open positions now?')) return
     await apiPost('/api/kill', {})
   }
+  async function resume() {
+    const typed = window.prompt(
+      'Resume trading today? This clears the daily-loss / kill-switch halt.\n\nType RESUME to confirm:')
+    if (typed !== 'RESUME') return
+    await apiPost('/api/resume', { confirm: 'RESUME' })
+  }
 
   const regimeOn = regime?.on !== false && !(regime?.vetoes && regime.vetoes.length)
   const capColor = cap === 'EXHAUSTED' ? 'var(--red)' : cap === 'SOFT_CAP' ? 'var(--amber)' : 'var(--green)'
@@ -66,6 +72,8 @@ export function Header({ snap, connected }: { snap: Snapshot | null; connected: 
         </button>
         <button className="tab" onClick={kill}
           style={{ borderColor: 'var(--red)', color: 'var(--red)', fontWeight: 700 }}>Kill</button>
+        {halted && <button className="tab" onClick={resume}
+          style={{ borderColor: 'var(--green)', color: 'var(--green)', fontWeight: 700 }}>Resume</button>}
         <span title={connected ? 'live feed connected' : 'reconnecting…'}
           style={{ width: 9, height: 9, borderRadius: 9, background: connected ? 'var(--green)' : 'var(--amber)' }}
           className={connected ? '' : 'blink'} />

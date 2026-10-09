@@ -9,6 +9,10 @@ from intraday.options import ist_now
 from intraday.options.chain_builder import build_chain
 from intraday.risk import Governor
 from intraday.rules import RuleEngine
+from intraday.brokers import PaperBroker
+from intraday.journal.store import Store
+from intraday.orders import OrderManager
+from intraday.rules import engine as rules_engine
 from intraday.tests.test_options_math import _synthetic_payload
 
 
@@ -251,3 +255,77 @@ def test_rules_fut_dedup_is_side_aware():
                         underlying="NIFTY", lot_size=50)
     ok, _ = re.check(_intent(underlying="NIFTY", right="CE"), now, [opt_held])
     assert ok is False
+
+
+# ── Re-entry cooldown: an exit buys quiet before the same bet ─────────────────
+def _cooldown_engine(seconds=300.0):
+    return RuleEngine({"square_off_time": "15:15", "no_new_entries_after": "15:00",
+                       "max_positions": 4, "max_lots_per_symbol": 10,
+                       "reentry_cooldown_seconds": seconds})
+
+
+def test_rules_reentry_cooldown_blocks_then_releases():
+    re = _cooldown_engine()
+    now = _weekday_10am()
+    key = rules_engine.cooldown_key("NIFTY", "CE")
+    ok, why = re.check(_intent(), now, [], last_exits={key: now - dt.timedelta(seconds=60)})
+    assert ok is False and "cooldown" in why.lower()
+    ok, _ = re.check(_intent(), now, [], last_exits={key: now - dt.timedelta(seconds=301)})
+    assert ok is True                                # window elapsed
+    other = rules_engine.cooldown_key("BANKNIFTY", "CE")
+    ok, _ = re.check(_intent(), now, [], last_exits={other: now})
+    assert ok is True                                # other instruments unaffected
+    ok, _ = re.check(_intent(), now, [], is_exit=True, last_exits={key: now})
+    assert ok is True                                # exits bypass the cooldown
+
+
+def test_rules_reentry_cooldown_fails_open_on_bad_clock():
+    re = _cooldown_engine()
+    now = _weekday_10am()
+    key = rules_engine.cooldown_key("NIFTY", "CE")
+    ok, _ = re.check(_intent(), now, [], last_exits={key: "not-a-clock"})
+    assert ok is True
+    assert re.check(_intent(), now, [], last_exits=None)[0] is True
+
+
+def test_submit_journals_cooldown_block(tmp_path):
+    store = Store(tmp_path / "cd.db")
+    mgr = OrderManager(PaperBroker(0.10), store, _cooldown_engine())
+    now = _weekday_10am()
+    key = rules_engine.cooldown_key("NIFTY", "CE")
+    res = mgr.submit(_intent(), now, [], last_exits={key: now})
+    assert res.status == "BLOCKED" and "cooldown" in res.reason.lower()
+    row = store.one("SELECT status FROM orders ORDER BY id DESC LIMIT 1")
+    assert row["status"].startswith("BLOCKED") and "cooldown" in row["status"].lower()
+    store.close()
+
+
+# ── I2 one-sided book: exit at the last real quote, not a 0.05 fantasy ───────
+def test_exit_onesided_uses_last_good_bid():
+    p = _aged_pos()
+    manage(p, _mkt(24810, 105), {"target_r_1": 5, "target_r_2": 9})  # healthy book first
+    assert p.last_good_bid > 0
+    d = manage(p, _onesided_mkt(), {"min_hold_seconds": 90})
+    assert d.action == "EXIT" and "I2" in d.reason
+    assert d.exit_px == p.last_good_bid and d.exit_px > 1.0
+
+
+def test_exit_onesided_short_uses_ask_and_falls_back_to_entry():
+    p = _aged_pos()                                  # never saw a healthy book
+    d = manage(p, _onesided_mkt(), {"min_hold_seconds": 90})
+    assert d.action == "EXIT" and d.exit_px == p.entry_px
+    s = _short_pos()
+    s.entry_ts = ist_now() - dt.timedelta(seconds=600)
+    manage(s, _mkt(24810, 105), {"target_r_1": 5, "target_r_2": 9})
+    ask_gone = ExitMarket(now=ist_now(), spot=24810.0, leg_bid=103.0,
+                          leg_ask=0.0, leg_mid=105.0, bars=None,
+                          vwap=None, is_square_off=False)
+    d2 = manage(s, ask_gone, {"min_hold_seconds": 90})
+    assert d2.action == "EXIT" and "I2" in d2.reason
+    assert d2.exit_px == s.last_good_ask and d2.exit_px > 103.0
+
+
+def test_exit_stall_reason_formats_bars():
+    p = _aged_pos(age_bars=11.001299923333333)   # wall-clock age leaks float dust
+    d = manage(p, _mkt(24810, 105), {})
+    assert d.action == "EXIT" and d.reason == "I5 stall 12.0 bars <0.5R"

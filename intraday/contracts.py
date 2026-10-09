@@ -116,6 +116,8 @@ class Position:
     age_bars: int = 0                 # bars held (not sessions)
     max_prem: float = 0.0             # highest favourable premium seen (trailing)
     max_fav_spot: float = 0.0         # highest favourable underlying move seen
+    last_good_bid: float = 0.0          # last positive leg bid seen (I2 one-sided fallback; advisory, not journaled)
+    last_good_ask: float = 0.0          # last positive leg ask seen (short-leg mirror of the above)
     breakeven_done: bool = False      # stop moved to breakeven after +1R (I3)
     stall_checked: bool = False       # I5 one-shot theta-stall guard
     partial_done: bool = False        # T1 partial booked (I3)

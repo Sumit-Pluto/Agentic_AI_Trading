@@ -120,3 +120,11 @@ def test_pause_toggle_and_config_update():
         assert r["ok"] and r["config"]["score_threshold"] == 61
         # LIVE mode is guarded off the sim engine
         assert "error" in c.post("/api/mode", json={"mode": "live"}).json()
+
+
+def test_kill_and_resume_with_typed_confirm():
+    with _client() as c:
+        assert c.post("/api/kill").json()["halted"] is True
+        assert c.post("/api/resume", json={}).status_code == 400
+        r = c.post("/api/resume", json={"confirm": "RESUME"}).json()
+        assert r["halted"] is False and r["paused"] is False

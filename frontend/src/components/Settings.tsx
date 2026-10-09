@@ -23,6 +23,7 @@ const KNOBS: { key: string; label: string; group: string }[] = [
   { key: 'target_r_2', label: 'Target 2 (R)', group: 'Exits' },
   { key: 'trail_atr_mult', label: 'Trail ATR ×', group: 'Exits' },
   { key: 'min_hold_seconds', label: 'Min hold (s)', group: 'Exits' },
+  { key: 'reentry_cooldown_seconds', label: 'Re-entry cooldown (s)', group: 'Exits' },
   { key: 'max_spread_pct', label: 'Max spread (%)', group: 'Exits' },
   { key: 'square_off_time', label: 'Square-off time', group: 'Session' },
   { key: 'no_new_entries_after', label: 'No new entries after', group: 'Session' },

@@ -26,7 +26,7 @@ from ..model import ModelFilter
 from ..options.models import IST, market_session
 from ..orders import OrderManager
 from ..risk import Governor
-from ..rules import RuleEngine
+from ..rules import RuleEngine, cooldown_key
 
 # NSE option tsym: <UNDERLYING><DD><MON><YY><C|P><STRIKE>, e.g. NIFTY29SEP26C24800
 _TSYM_OPT_RE = re.compile(r"^([A-Z]+?)(\d{2}[A-Z]{3}\d{2})([CP])(\d+(?:\.\d+)?)$")
@@ -49,6 +49,8 @@ class SessionLoop:
         self.positions: list[Position] = []
         self.equity_curve: list[float] = []
         self.halted = False
+        self._halt_reason = ""                        # why halted (journalled with the flag)
+        self._last_exit: dict[str, dt.datetime] = {}  # (underlying|right) -> exit ts (re-entry cooldown)
         self.equity = self.governor.budget()          # capital base = total_budget
         self.funds_provider = None                    # set by the runner in LIVE mode -> /api/funds dict
         self.last_scan: dict = {}      # last scan for the UI (regime, signals, agent rows)
@@ -154,6 +156,49 @@ class SessionLoop:
         self._flatten_reason = reason
         if halt:
             self.halted = True
+            self._halt_reason = reason
+
+    def _halt_flag_key(self, day: dt.date) -> str:
+        return f"halted:{day.isoformat()}"
+
+    def _persist_halt(self, day: dt.date) -> None:
+        """Journal today's halt so a restart cannot resurrect a killed day.
+        Idempotent; never raises (a failed write must not break the step)."""
+        try:
+            if self.store.get_flag(self._halt_flag_key(day)) is None:
+                self.store.set_flag(self._halt_flag_key(day),
+                                    self._halt_reason or "daily-loss kill")
+        except Exception:
+            pass
+
+    def _restore_halt(self, day: dt.date) -> None:
+        """First tick after (re)start: re-arm today's journalled halt, if any."""
+        try:
+            why = self.store.get_flag(self._halt_flag_key(day))
+        except Exception:
+            why = None
+        if why is not None:
+            self.halted = True
+            self._halt_reason = str(why)
+            self._log("halt", f"halt restored after restart ({why}) — no new entries today")
+
+    def resume(self, reason: str = "manual resume") -> None:
+        """Explicit human override: clear today's halt (memory + journal)."""
+        self.halted = False
+        self._halt_reason = ""
+        try:
+            self.store.x("DELETE FROM flags WHERE key LIKE 'halted:%'")
+        except Exception:
+            pass
+        self._log("halt", f"resumed ({reason}) — entries allowed again")
+
+    def _note_exit(self, pos: Position, now: dt.datetime) -> None:
+        """Stamp the re-entry cooldown: every full close (exit / flatten /
+        reconcile) quiets this (underlying, right) for a while. Never raises."""
+        try:
+            self._last_exit[cooldown_key(pos.underlying, pos.right)] = now
+        except Exception:
+            pass
 
     def step(self, now: dt.datetime | None = None) -> dict:
         now = now or self.ctx.now()
@@ -164,10 +209,16 @@ class SessionLoop:
         today = now.date()
         if self._day is None:
             self._day = today
+            self._restore_halt(today)     # a restart must not resurrect a killed day
         elif today != self._day:
             self._day = today
             self.halted = False
+            self._halt_reason = ""
             self.equity_curve = []
+            try:
+                self.store.x("DELETE FROM flags WHERE key LIKE 'halted:%'")
+            except Exception:
+                pass
             self._log("session", f"new trading day {today.isoformat()} — halt cleared")
         if self._flatten_request:
             # cleared BEFORE the call so an incomplete flatten can re-arm
@@ -200,7 +251,12 @@ class SessionLoop:
         if not self.halted and self.governor.daily_loss_breached(realized, unrealized):
             self._flatten_all(now, "daily-loss kill")
             self.halted = True
+            self._halt_reason = "daily-loss kill"
             self._log("halt", "daily-loss kill — flattened everything")
+        if self.halted:
+            # Journal on the engine thread (covers the kill switch too, whose
+            # flag is set from the API thread): a restart must not revive today.
+            self._persist_halt(today)
 
         # 3. scan at cadence (exits/kill run every tick; the full agent tree
         #    is expensive, so live ticks reuse the last scan between cadences).
@@ -366,6 +422,7 @@ class SessionLoop:
         pos.exit_reason = decision.reason
         self.store.close_position(pos, self.brain.version,
                                   cost_per_share=self._cost_per_share(pos))
+        self._note_exit(pos, now)
         sign = 1.0 if pos.is_long else -1.0
         cpnl = sign * ((pos.exit_px or 0.0) - pos.entry_px) * pos.qty
         self._log("exits", f"{pos.symbol} closed @ {pos.exit_px:.2f} "
@@ -446,6 +503,7 @@ class SessionLoop:
             pos.exit_px, pos.exit_ts, pos.exit_reason = (res.fill_px or px), now, reason
             self.store.close_position(pos, self.brain.version,
                                       cost_per_share=self._cost_per_share(pos))
+            self._note_exit(pos, now)
             sign = 1.0 if pos.is_long else -1.0
             cpnl = sign * ((pos.exit_px or 0.0) - pos.entry_px) * pos.qty
             self._log("exits", f"{pos.symbol} flattened @ {pos.exit_px:.2f} "
@@ -700,6 +758,7 @@ class SessionLoop:
                     pos.exit_px = self._reconcile_mark(pos)
                     pos.exit_ts, pos.exit_reason = now, "reconcile: flat at broker"
                     self.store.close_position(pos, self.brain.version)
+                    self._note_exit(pos, now)
                     summary["closed_ghosts"] += 1
                     self._log("reconcile", f"{pos.symbol} flat at broker — journal-closed")
                     continue
@@ -831,7 +890,8 @@ class SessionLoop:
         sid = self.store.save_signal(sig)
         intent.signal_id = sid
         res = self.orders.submit(intent, now, self.positions, is_exit=False,
-                                 halted=self.halted, paused=self._paused())
+                                 halted=self.halted, paused=self._paused(),
+                                 last_exits=self._last_exit)
         if res.status != "FILLED" or not res.fill_px:
             # An attempted placement that failed is rare and important (unlike
             # routine size/cap skips, which stay silent to avoid log floods).

@@ -3,6 +3,6 @@
 The authoritative cross-strategy backstop is the Gateway ExecutionCoordinator
 (§8); this is the fast, local check that fails without a round trip.
 """
-from .engine import RuleEngine
+from .engine import RuleEngine, cooldown_key
 
-__all__ = ["RuleEngine"]
+__all__ = ["RuleEngine", "cooldown_key"]

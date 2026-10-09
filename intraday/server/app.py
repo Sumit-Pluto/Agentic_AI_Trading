@@ -234,6 +234,20 @@ async def kill_switch(request: Request):
     return {"halted": True, "paused": True}
 
 
+@app.post("/api/resume")
+async def resume(body: dict, request: Request):
+    """Clear a daily-loss / kill-switch halt. Requires {"confirm":"RESUME"} —
+    the halt persists across restarts by design, so only a typed human
+    override lifts it (also clears the pause the kill switch sets)."""
+    _guard_mutation(request)
+    if str(body.get("confirm", "")) != "RESUME":
+        return JSONResponse(status_code=400, content={"error": 'type "RESUME" to confirm'})
+    runner.cfg["paused"] = False
+    config_mod.save(runner.cfg)
+    runner.loop.resume()
+    return {"halted": False, "paused": False}
+
+
 @app.get("/api/budget")
 def budget():
     s = runner.snapshot()

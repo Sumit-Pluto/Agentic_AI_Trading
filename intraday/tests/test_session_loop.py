@@ -459,3 +459,45 @@ def test_flatten_retries_and_accounts_partials(tmp_path):
     assert store.one("SELECT COUNT(*) n FROM trades")["n"] == 3
     assert loop._flatten_request is False
     store.close()
+
+
+def test_reentry_cooldown_blocks_immediate_rebuy(tmp_path):
+    store = Store(tmp_path / "cd.db")
+    cfg = dict(CFG, reentry_cooldown_seconds=300.0)
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, cfg, brain=Brain.equal())
+    assert loop.step()["positions"] == 1          # 10:00 entry
+    ctx.set(now=_weekday(10, 1), square=True, trend="flat")
+    assert loop.step()["positions"] == 0          # 10:01 I0 exit
+    ctx.set(now=_weekday(10, 2), square=False, trend="up")
+    st = loop.step()                              # 10:02 re-entry attempt
+    assert st["entries"] == 0 and st["positions"] == 0
+    row = store.one("SELECT status FROM orders ORDER BY id DESC LIMIT 1")
+    assert row["status"].startswith("BLOCKED") and "cooldown" in row["status"].lower()
+    ctx.set(now=_weekday(10, 8), trend="up")       # >300 s after the exit
+    st2 = loop.step()
+    assert st2["entries"] == 1 and st2["positions"] == 1
+    store.close()
+
+
+def test_halt_survives_restart_and_clears_next_day(tmp_path):
+    store = Store(tmp_path / "hr.db")
+    cfg = dict(CFG, max_daily_loss_rupees=500.0)
+    ctx = ReplayContext()
+    loop = SessionLoop(ctx, store, cfg, brain=Brain.equal())
+    assert loop.step()["positions"] == 1
+    ctx.set(now=_weekday(11, 0), spot=24300.0, trend="flat")
+    assert loop.step()["halted"] is True
+    day = str(ctx.now().date())
+    assert store.get_flag("halted:" + day) is not None
+    # a fresh loop (restart) on the same day restores the halt, not entries
+    loop2 = SessionLoop(ReplayContext(), store, cfg, brain=Brain.equal())
+    st = loop2.step()
+    assert st["halted"] is True and st["entries"] == 0
+    # next trading day: yesterday's halt is gone
+    nxt = loop2.ctx.now() + dt.timedelta(days=1)
+    while nxt.weekday() >= 5:
+        nxt += dt.timedelta(days=1)
+    loop2.ctx.set(now=nxt.replace(hour=10, minute=0), spot=24800.0, trend="up")
+    assert loop2.step()["halted"] is False
+    store.close()

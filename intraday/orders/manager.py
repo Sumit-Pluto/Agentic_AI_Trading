@@ -41,11 +41,12 @@ class OrderManager:
 
     def submit(self, intent, now: dt.datetime, open_positions: list, *,
                is_exit: bool = False, halted: bool = False,
-               paused: bool = False) -> SubmitResult:
+               paused: bool = False, last_exits: dict | None = None) -> SubmitResult:
         # 1. local rule gate (fast, no round trip). The Gateway coordinator is
         #    the authoritative cross-strategy backstop for §8.
         ok, reason = self.rules.check(intent, now, open_positions, is_exit=is_exit,
-                                      halted=halted, paused=paused)
+                                      halted=halted, paused=paused,
+                                      last_exits=last_exits)
         if not ok:
             self.store.save_order(intent, status=f"BLOCKED:{reason}"[:60],
                                   broker=self.broker.name, date=now.date())
